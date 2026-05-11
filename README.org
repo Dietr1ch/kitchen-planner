@@ -1,0 +1,7 @@
+#+title: Kitchen Planner
+
+A stub on a cooking planner.
+
+
+* Tasks
+** TODO Define schema

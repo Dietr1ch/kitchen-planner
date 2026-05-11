@@ -1,0 +1,29 @@
+# This is a configuration file for the bacon tool
+#
+# Complete help on configuration: https://dystroy.org/bacon/config/
+#
+# You may check the current default at
+#   https://github.com/Canop/bacon/blob/main/defaults/default-bacon.toml
+
+default_job = "check"
+
+
+[env]
+CARGO_TERM_COLOR = "always"
+FORCE_COLOR = "t"
+
+
+[jobs.fix]
+command = [
+    "cargo",
+    "clippy",
+    "--all-targets",
+    "--all-features",
+    "--fix",
+    "--allow-dirty",
+]
+need_stdout = true
+
+[jobs.fmt]
+command = ["cargo", "fmt"]
+need_stdout = false

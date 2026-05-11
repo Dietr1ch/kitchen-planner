@@ -1,0 +1,25 @@
+# -*- mode: gitignore; -*-
+
+# Unix
+.*
+
+
+# Git
+!.gitignore
+
+
+# Project
+!.config
+!.*.example
+!.envrc
+!.ignore
+!.spelling
+!.treefmt.toml
+TODOs.org
+devenv.local*
+
+
+# Rust
+!.cargo
+!.rustfmt.toml
+/target
