@@ -1,0 +1,7 @@
+# https://nexte.st/docs/configuration/reference/
+
+[profile.default]
+fail-fast = { max-fail = 5 }
+
+[profile.ci]
+fail-fast = false  # Do not cancel the test run on the first failure.
