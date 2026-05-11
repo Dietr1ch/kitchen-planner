@@ -33,12 +33,12 @@
           inherit system overlays;
         };
 
-        # rustManifest = (pkgs.lib.importTOML ./Cargo.toml).package;
+        rustManifest = (pkgs.lib.importTOML ./Cargo.toml).package;
         rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
-        # rustPlatform = pkgs.makeRustPlatform {
-        #   cargo = rustToolchain;
-        #   rustc = rustToolchain;
-        # };
+        rustPlatform = pkgs.makeRustPlatform {
+          cargo = rustToolchain;
+          rustc = rustToolchain;
+        };
       in
       {
         devShells = {
@@ -66,6 +66,17 @@
           #     nixfmt.enable = true;
           #   };
           # };
+        };
+
+        packages = {
+          default = rustPlatform.buildRustPackage {
+            pname = rustManifest.name;
+            version = rustManifest.version;
+            src = ./.;
+            cargoLock.lockFile = ./Cargo.lock;
+            # TODO: Review if these tests would be duplicate the checks above
+            # doCheck = false;
+          };
         };
       }
     );
