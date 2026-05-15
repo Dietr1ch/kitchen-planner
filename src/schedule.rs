@@ -5,6 +5,63 @@ use crate::kitchen::Kitchen;
 use crate::plan::{Plan, Task};
 use crate::recipe::Recipe;
 
+fn needs_cook(resource_id: &Option<String>, kitchen: &Kitchen) -> bool {
+    match resource_id {
+        None => false,
+        Some(rid) => kitchen
+            .equipment
+            .iter()
+            .find(|e| e.id == *rid)
+            .map(|e| e.kind != "oven")
+            .unwrap_or(true),
+    }
+}
+
+fn standalone_recipe_duration(_kitchen: &Kitchen, recipe: &Recipe) -> u32 {
+    let mut resource_available: HashMap<String, u32> = recipe
+        .steps
+        .iter()
+        .filter_map(|s| s.resource_id.as_ref())
+        .map(|rid| (rid.clone(), 0))
+        .collect();
+
+    let mut step_finish: HashMap<String, u32> = HashMap::new();
+
+    for step in topological_sort(&recipe.steps) {
+        let dep_finish = step
+            .dependencies
+            .iter()
+            .filter_map(|d| step_finish.get(d))
+            .max()
+            .copied()
+            .unwrap_or(0);
+
+        let resource_ready = step
+            .resource_id
+            .as_ref()
+            .and_then(|rid| resource_available.get(rid).copied())
+            .unwrap_or(0);
+
+        let start = dep_finish.max(resource_ready);
+        let finish = start + step.duration_minutes;
+
+        if let Some(rid) = &step.resource_id {
+            resource_available.insert(rid.clone(), finish);
+        }
+
+        step_finish.insert(step.id.clone(), finish);
+    }
+
+    step_finish.values().max().copied().unwrap_or(0)
+}
+
+fn pick_cook(cook_available: &HashMap<String, u32>) -> Option<String> {
+    cook_available
+        .iter()
+        .min_by_key(|&(_, time)| *time)
+        .map(|(name, _)| name.clone())
+}
+
 pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
     let mut tasks = Vec::new();
 
@@ -19,9 +76,24 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
         .map(|c| (c.name.clone(), 0))
         .collect();
 
-    for recipe in recipes {
+    // Compute standalone durations and sort recipes longest-first
+    let mut recipe_info: Vec<(&Recipe, u32)> = recipes
+        .iter()
+        .map(|r| (r, standalone_recipe_duration(kitchen, r)))
+        .collect();
+    recipe_info.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let pacing_end = recipe_info
+        .first()
+        .map(|(_, d)| *d)
+        .unwrap_or(0);
+
+    for &(recipe, duration) in &recipe_info {
+        let recipe_target_start = pacing_end.saturating_sub(duration);
         schedule_recipe(
+            kitchen,
             recipe,
+            recipe_target_start,
             &mut resource_available,
             &mut cook_available,
             &mut tasks,
@@ -34,15 +106,10 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
     }
 }
 
-fn pick_cook(cook_available: &HashMap<String, u32>) -> Option<String> {
-    cook_available
-        .iter()
-        .min_by_key(|&(_, time)| *time)
-        .map(|(name, _)| name.clone())
-}
-
 fn schedule_recipe(
+    kitchen: &Kitchen,
     recipe: &Recipe,
+    recipe_target_start: u32,
     resource_available: &mut HashMap<String, u32>,
     cook_available: &mut HashMap<String, u32>,
     tasks: &mut Vec<Task>,
@@ -71,14 +138,20 @@ fn schedule_recipe(
             .copied()
             .unwrap_or(0);
 
-        let start = dep_finish.max(resource_ready).max(cook_ready);
+        let start = dep_finish
+            .max(resource_ready)
+            .max(cook_ready)
+            .max(recipe_target_start);
         let finish = start + step.duration_minutes;
 
         if let Some(rid) = &step.resource_id {
             resource_available.insert(rid.clone(), finish);
         }
-        if let Some(ref name) = cook_name {
-            cook_available.insert(name.clone(), finish);
+
+        if needs_cook(&step.resource_id, kitchen) {
+            if let Some(ref name) = cook_name {
+                cook_available.insert(name.clone(), finish);
+            }
         }
 
         step_finish.insert(step.id.clone(), finish);
