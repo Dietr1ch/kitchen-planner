@@ -18,7 +18,7 @@ pub struct Ingredient {
     pub alternatives: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Step {
     pub id: String,
     pub description: String,
