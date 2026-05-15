@@ -61,7 +61,7 @@ fn schedule(kitchen_path: PathBuf, cooks_dir: PathBuf, recipe_paths: Vec<PathBuf
         .map(|p| read_file("recipe", p))
         .collect();
 
-    let plan = kitchen_planner::mzn_solver::solve(&kitchen, &cooks, &recipes);
+    let plan = kitchen_planner::schedule::schedule(&kitchen, &cooks, &recipes);
     println!("{}", serde_json::to_string_pretty(&plan).unwrap());
 }
 
