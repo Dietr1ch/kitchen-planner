@@ -2,6 +2,49 @@
 
 A stub on a cooking planner.
 
+* Goals
+** Modeling a kitchen
+We want to model all the resources available in the kitchen, including,
+
+*** Equipment
+- Stove
+  - Burners
+- Pots
+  - Sizes and materials
+- Utensils
+  - Eg, Spoons, Shears, Tongs, Whisks. Optionally specify materials.
+*** Resources
+- Food
+  - Measured in quantity, cans, by weight
+**** Materials
+- Gas
+- Wood
+- Plastic wrap
+- Baking paper
+
+** Modeling recipes
+- Detailed requirements, steps
+- Allow for alternatives and optional elements
+
+** Modeling cooks
+Measure skills in simple way
+- Eg, 4 levels of knife skills used to model the time it'd take to prep food.
+** Planning execution
+Have a Library + CLI tool to turn the kitchen model and a set of recipes into a plan to prepare them.
+- Allow for parallel progress and waits
+- Minimise wall-time while aligning finish times so food is warm and ready at the same time
+- Define a schema for plans
+- Use a solver for this part, but the final output should still use our schema.
+
+** Aiding execution
+Have a web application capable of guiding the user through a planned execution.
+- Display tasks and their progress
+- Help with timers
+
 
 * Tasks
 ** TODO Define schema
+*** TODO Kitchen Schema
+*** TODO Recipe Schema
+*** TODO Cook Schema
+*** TODO Plan Schema
