@@ -1,4 +1,4 @@
-use crate::plan::Plan;
+use crate::models::plan::Plan;
 
 pub trait Renderer {
     fn render(&self, plan: &Plan) -> String;
@@ -12,7 +12,7 @@ pub enum SortOrder {
     Cook,
 }
 
-pub(crate) fn sorted_tasks(plan: &Plan, order: SortOrder) -> (Vec<crate::plan::Task>, u32) {
+pub(crate) fn sorted_tasks(plan: &Plan, order: SortOrder) -> (Vec<crate::models::plan::Task>, u32) {
     let mut tasks = plan.tasks.clone();
     match order {
         SortOrder::Start => tasks.sort_by_key(|t| t.start_offset_minutes),

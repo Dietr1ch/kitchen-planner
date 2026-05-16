@@ -1,5 +1,5 @@
 use super::{short_deps, sorted_tasks, truncate, Renderer, SortOrder};
-use crate::plan::Plan;
+use crate::models::plan::Plan;
 
 pub struct TextRenderer {
     pub sort_order: SortOrder,

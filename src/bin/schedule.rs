@@ -4,9 +4,9 @@ use std::process;
 
 use clap::Parser;
 
-use kitchen_planner::cook::Cook;
-use kitchen_planner::kitchen::Kitchen;
-use kitchen_planner::recipe::Recipe;
+use kitchen_planner::models::cook::Cook;
+use kitchen_planner::models::kitchen::Kitchen;
+use kitchen_planner::models::recipe::Recipe;
 
 #[derive(Parser)]
 #[command(name = "kitchen-planner-mzn")]

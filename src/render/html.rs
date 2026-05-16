@@ -1,5 +1,5 @@
 use super::{Renderer, SortOrder, short_deps, sorted_tasks};
-use crate::plan::Plan;
+use crate::models::plan::Plan;
 
 pub struct HtmlRenderer;
 

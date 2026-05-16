@@ -1,6 +1,3 @@
-pub mod cook;
-pub mod kitchen;
-pub mod plan;
-pub mod recipe;
+pub mod models;
 pub mod render;
 pub mod schedule;

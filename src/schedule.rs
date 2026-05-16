@@ -3,10 +3,10 @@ use std::fs;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use crate::cook::Cook;
-use crate::kitchen::Kitchen;
-use crate::plan::{Plan, Task};
-use crate::recipe::Recipe;
+use crate::models::cook::Cook;
+use crate::models::kitchen::Kitchen;
+use crate::models::plan::{Plan, Task};
+use crate::models::recipe::Recipe;
 
 fn needs_cook(resource_id: &Option<String>, kitchen: &Kitchen) -> bool {
     match resource_id {
