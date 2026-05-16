@@ -8,6 +8,7 @@ use crate::models::kitchen::Kitchen;
 use crate::models::plan::{Plan, Task};
 use crate::models::recipe::Recipe;
 
+#[allow(clippy::too_many_arguments)]
 fn build_model(
     durations: &[u32],
     needs_cook_arr: &[bool],
@@ -201,12 +202,11 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
     for task in &tasks {
         let task_idx = id_to_idx[&task.id];
         for dep_id in &task.dependencies {
-            if let Some(&dep_idx) = id_to_idx.get(dep_id) {
-                if encountered_deps.insert((dep_idx, task_idx)) {
+            if let Some(&dep_idx) = id_to_idx.get(dep_id)
+                && encountered_deps.insert((dep_idx, task_idx)) {
                     deps_from.push(dep_idx);
                     deps_to.push(task_idx);
                 }
-            }
         }
     }
 
@@ -302,28 +302,24 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
         let mut assign_vals: Option<Vec<usize>> = None;
 
         for line in output_str.lines() {
-            if let Some(arr_str) = line.strip_prefix("start = ").and_then(|s| s.strip_suffix(';')) {
-                if let Some(v) = parse_array_i64(arr_str) {
+            if let Some(arr_str) = line.strip_prefix("start = ").and_then(|s| s.strip_suffix(';'))
+                && let Some(v) = parse_array_i64(arr_str) {
                     start_vals = Some(v.into_iter().map(|x| x as u32).collect());
                 }
-            }
-            if let Some(arr_str) = line.strip_prefix("cook = ").and_then(|s| s.strip_suffix(';')) {
-                if let Some(v) = parse_array_i64(arr_str) {
+            if let Some(arr_str) = line.strip_prefix("cook = ").and_then(|s| s.strip_suffix(';'))
+                && let Some(v) = parse_array_i64(arr_str) {
                     cook_vals = Some(v.into_iter().map(|x| x as usize).collect());
                 }
-            }
-            if let Some(arr_str) = line.strip_prefix("assign = ").and_then(|s| s.strip_suffix(';')) {
-                if let Some(v) = parse_array_i64(arr_str) {
+            if let Some(arr_str) = line.strip_prefix("assign = ").and_then(|s| s.strip_suffix(';'))
+                && let Some(v) = parse_array_i64(arr_str) {
                     assign_vals = Some(v.into_iter().map(|x| x as usize).collect());
                 }
-            }
         }
 
-        if let (Some(start_vals), Some(cook_vals), Some(assign_vals)) = (start_vals, cook_vals, assign_vals) {
-            if start_vals.len() == tasks.len() && cook_vals.len() == tasks.len() && assign_vals.len() == tasks.len() {
+        if let (Some(start_vals), Some(cook_vals), Some(assign_vals)) = (start_vals, cook_vals, assign_vals)
+            && start_vals.len() == tasks.len() && cook_vals.len() == tasks.len() && assign_vals.len() == tasks.len() {
                 last_solution = Some((start_vals, cook_vals, assign_vals));
             }
-        }
     }
 
     let (start_vals, cook_vals, assign_vals) = last_solution.expect("no solution found from minizinc");

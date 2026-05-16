@@ -60,7 +60,7 @@ impl Renderer for HtmlRenderer {
 				task_id,
 				dep_ids,
 				start,
-				html_escape(&cook),
+				html_escape(cook),
 				offset_pct,
 				width_pct,
 				bar_label,
