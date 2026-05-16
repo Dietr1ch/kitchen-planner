@@ -207,7 +207,7 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
   function renderPlan(plan) {
     loadedPlan = plan;
     showError('');
-    sortAndRender(document.getElementById('sortSelect').value);
+    sortAndRender('start');
     ganttWrap.classList.add('visible');
     dropZone.classList.add('has-plan');
     dropZone.querySelector('.icon').style.display = 'none';
