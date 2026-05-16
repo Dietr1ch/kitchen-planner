@@ -1,10 +1,12 @@
-build:
-	nix build
-
 check:
 	ron-lsp check
 	nix flake check
 
+fmt:
+	cargo fmt
+
+build:
+	nix build
 plan:
 	@cargo run \
 	  --quiet \
