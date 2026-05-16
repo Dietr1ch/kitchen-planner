@@ -16,7 +16,6 @@ FORCE_COLOR = "t"
 [jobs.check]
 command = [
   "cargo", "check",
-  "--all-features",
   "--all-targets"
 ]
 need_stdout = false
@@ -24,7 +23,6 @@ need_stdout = false
 [jobs.nextest]
 command = [
     "cargo", "nextest", "run",
-    "--all-features",
     "--all-targets",
     "--hide-progress-bar",
     "--failure-output",
@@ -36,7 +34,6 @@ analyzer = "nextest"
 [jobs.fix]
 command = [
     "cargo", "clippy",
-    "--all-features",
     "--all-targets",
     "--fix",
     "--allow-dirty",

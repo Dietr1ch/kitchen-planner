@@ -1,7 +1,6 @@
 check:
 	ron-lsp check
 	cargo check \
-	  --all-features \
 	  --all-targets
 	nix flake check
 
@@ -10,7 +9,6 @@ fmt:
 
 lint:
 	cargo clippy \
-	  --all-features \
 	  --all-targets \
 	  --fix \
 	  --allow-dirty
