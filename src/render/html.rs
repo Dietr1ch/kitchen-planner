@@ -18,7 +18,8 @@ impl Renderer for HtmlRenderer {
 				.round()
 				.max(1.0);
 
-			let resource = resource_display(task.resource_kind.as_deref(), task.resource_id.as_deref());
+			let resource =
+				resource_display(task.resource_kind.as_deref(), task.resource_id.as_deref());
 			let cook = task.cook.as_deref().unwrap_or("(none)");
 			let dish = html_escape(&task.dish);
 			let desc = html_escape(&task.description);
