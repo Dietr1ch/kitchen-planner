@@ -4,9 +4,23 @@ pub trait Renderer {
     fn render(&self, plan: &Plan) -> String;
 }
 
-pub(crate) fn sorted_tasks(plan: &Plan) -> (Vec<crate::plan::Task>, u32) {
+#[derive(Copy, Clone, Debug, Default, clap::ValueEnum)]
+pub enum SortOrder {
+    #[default]
+    ByStart,
+    ByCook,
+}
+
+pub(crate) fn sorted_tasks(plan: &Plan, order: SortOrder) -> (Vec<crate::plan::Task>, u32) {
     let mut tasks = plan.tasks.clone();
-    tasks.sort_by_key(|t| t.start_offset_minutes);
+    match order {
+        SortOrder::ByStart => tasks.sort_by_key(|t| t.start_offset_minutes),
+        SortOrder::ByCook => tasks.sort_by(|a, b| {
+            a.cook
+                .cmp(&b.cook)
+                .then(a.start_offset_minutes.cmp(&b.start_offset_minutes))
+        }),
+    }
 
     let total_duration = tasks
         .iter()

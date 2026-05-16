@@ -48,6 +48,8 @@ th {
   border-bottom: 2px solid #ddd; font-weight: 600; font-size: 0.85rem;
   white-space: nowrap;
 }
+th[data-sort] { cursor: pointer; }
+th[data-sort]:hover { background: #e8e8e8; }
 td { padding: 8px 12px; border-bottom: 1px solid #eee; vertical-align: middle; font-size: 0.85rem; }
 tr:last-child td { border-bottom: none; }
 tr:hover { background: #fafafa; }
@@ -99,11 +101,11 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
   <table id="ganttTable">
     <thead>
       <tr>
-        <th>Duration</th>
+        <th data-sort="start">Duration ↕</th>
         <th>Dish</th>
         <th>Task</th>
         <th>Dependencies</th>
-        <th>Cook</th>
+        <th data-sort="cook">Cook ↕</th>
         <th>Resource</th>
       </tr>
     </thead>
@@ -148,11 +150,25 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
     }).join(', ');
   }
 
-  function renderPlan(plan) {
-    showError('');
-    var tasks = plan.tasks.slice().sort(function (a, b) {
-      return a.start_offset_minutes - b.start_offset_minutes;
-    });
+  var loadedPlan = null;
+
+  function sortAndRender(sortOrder) {
+    if (!loadedPlan) return;
+    var tasks = loadedPlan.tasks.slice();
+    if (sortOrder === 'cook') {
+      tasks.sort(function (a, b) {
+        var ca = a.cook || '';
+        var cb = b.cook || '';
+        if (ca < cb) return -1;
+        if (ca > cb) return 1;
+        return a.start_offset_minutes - b.start_offset_minutes;
+      });
+    } else {
+      tasks.sort(function (a, b) {
+        return a.start_offset_minutes - b.start_offset_minutes;
+      });
+    }
+
     var totalDuration = tasks.reduce(function (max, t) {
       return Math.max(max, t.start_offset_minutes + t.duration_minutes);
     }, 0) || 1;
@@ -191,6 +207,12 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
     }
 
     ganttBody.innerHTML = rows;
+  }
+
+  function renderPlan(plan) {
+    loadedPlan = plan;
+    showError('');
+    sortAndRender(document.getElementById('sortSelect').value);
     startTimeSpan.textContent = plan.start_time || '(not set)';
     planInfo.style.display = 'block';
     ganttWrap.classList.add('visible');
@@ -258,6 +280,13 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
     e.preventDefault();
     dropZone.classList.remove('drag-over');
     if (e.dataTransfer.files.length > 0) loadFromFile(e.dataTransfer.files[0]);
+  });
+
+  // Column header click sorting
+  document.querySelectorAll('#ganttTable th[data-sort]').forEach(function (th) {
+    th.addEventListener('click', function () {
+      sortAndRender(this.dataset.sort);
+    });
   });
 
   // Hover highlighting

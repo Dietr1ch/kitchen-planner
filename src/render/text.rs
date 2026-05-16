@@ -1,11 +1,19 @@
-use super::{short_deps, sorted_tasks, truncate, Renderer};
+use super::{short_deps, sorted_tasks, truncate, Renderer, SortOrder};
 use crate::plan::Plan;
 
-pub struct TextRenderer;
+pub struct TextRenderer {
+    pub sort_order: SortOrder,
+}
+
+impl TextRenderer {
+    pub fn new(sort_order: SortOrder) -> Self {
+        TextRenderer { sort_order }
+    }
+}
 
 impl Renderer for TextRenderer {
     fn render(&self, plan: &Plan) -> String {
-        let (tasks, total_duration) = sorted_tasks(plan);
+        let (tasks, total_duration) = sorted_tasks(plan, self.sort_order);
 
         let bar_width = 40usize;
         let mut out = String::new();

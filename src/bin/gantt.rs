@@ -5,7 +5,7 @@ use std::process;
 
 use clap::{Parser, ValueEnum};
 use kitchen_planner::plan::Plan;
-use kitchen_planner::render::{HtmlRenderer, Renderer, TextRenderer};
+use kitchen_planner::render::{HtmlRenderer, Renderer, SortOrder, TextRenderer};
 
 #[derive(Parser)]
 #[command(name = "gantt")]
@@ -13,6 +13,8 @@ struct Cli {
 	path: PathBuf,
 	#[arg(short, long, value_enum, default_value_t = Format::Text)]
 	format: Format,
+	#[arg(short, long, value_enum, default_value_t = SortOrder::ByStart)]
+	sort_by: SortOrder,
 }
 
 #[derive(Copy, Clone, ValueEnum)]
@@ -41,7 +43,7 @@ fn main() {
 	});
 
 	let renderer: Box<dyn Renderer> = match cli.format {
-		Format::Text => Box::new(TextRenderer),
+		Format::Text => Box::new(TextRenderer::new(cli.sort_by)),
 		Format::Html => Box::new(HtmlRenderer),
 	};
 
