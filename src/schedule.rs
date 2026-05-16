@@ -127,24 +127,22 @@ fn build_model(
 	m.push_str("];\n");
 
 	m.push_str(&format!("int: num_preheats = {};\n", preheat_indices.len()));
-	if !preheat_indices.is_empty() {
-		m.push_str("array[1..num_preheats] of int: preheat_tasks = [");
-		for (i, &idx) in preheat_indices.iter().enumerate() {
-			if i > 0 {
-				m.push_str(", ");
-			}
-			m.push_str(&(idx + 1).to_string());
+	m.push_str("array[1..num_preheats] of int: preheat_tasks = [");
+	for (i, &idx) in preheat_indices.iter().enumerate() {
+		if i > 0 {
+			m.push_str(", ");
 		}
-		m.push_str("];\n");
-		m.push_str("array[1..num_preheats] of int: preheat_bakes = [");
-		for (i, &idx) in preheat_bake_indices.iter().enumerate() {
-			if i > 0 {
-				m.push_str(", ");
-			}
-			m.push_str(&(idx + 1).to_string());
-		}
-		m.push_str("];\n");
+		m.push_str(&(idx + 1).to_string());
 	}
+	m.push_str("];\n");
+	m.push_str("array[1..num_preheats] of int: preheat_bakes = [");
+	for (i, &idx) in preheat_bake_indices.iter().enumerate() {
+		if i > 0 {
+			m.push_str(", ");
+		}
+		m.push_str(&(idx + 1).to_string());
+	}
+	m.push_str("];\n");
 
 	m.push_str("array[1..num_deps] of int: deps_from = [");
 	for (i, v) in deps_from.iter().enumerate() {
