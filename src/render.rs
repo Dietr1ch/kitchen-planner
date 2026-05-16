@@ -50,8 +50,7 @@ impl Renderer for TextRenderer {
         out.push_str("Kitchen Planner - Gantt Chart\n\n");
         out.push_str(&format!("Plan start time: {}\n\n", plan.start_time));
         out.push_str(&format!(
-            "{:>5} │ {:<bar_width$} │ {:<42} │ {:<14} │ {:<10} │ {}\n",
-            "Time",
+            "{:<bar_width$} │ {:<42} │ {:<14} │ {:<10} │ {}\n",
             "Duration",
             "Task",
             "Deps",
@@ -60,8 +59,7 @@ impl Renderer for TextRenderer {
             bar_width = bar_width
         ));
         out.push_str(&format!(
-            "{}┼{}┼{}┼{}┼{}┼{}\n",
-            "─".repeat(5),
+            "{} ┼ {} ┼ {} ┼ {} ┼ {}\n",
             "─".repeat(bar_width),
             "─".repeat(42),
             "─".repeat(14),
@@ -78,15 +76,31 @@ impl Renderer for TextRenderer {
                     .round()
                     .max(1.0) as usize;
 
-            let bar = "▓".repeat(bar_len);
+            let offset = (start as f64 / total_duration as f64 * bar_width as f64)
+                .round() as usize;
+
+            let time_str = format!("{:>3}–{:<3}", start, end);
+            let offset = offset.min(bar_width.saturating_sub(time_str.len() + 2));
+            let max_bar = bar_width.saturating_sub(offset + time_str.len() + 1);
+            let bar_chars = "▓".repeat(bar_len.min(max_bar));
+            let bar_empty = bar_chars.is_empty();
+            let bar_full = format!(
+                "{}{}{}{}",
+                " ".repeat(offset),
+                time_str,
+                if bar_empty { "" } else { " " },
+                bar_chars,
+            );
+            let bar_column = format!("{:<width$}", bar_full.chars().take(bar_width).collect::<String>(), width = bar_width);
+
             let desc = truncate(&task.description, 39);
             let deps = short_deps(&task.dependencies);
             let resource = task.resource_id.as_deref().unwrap_or("(none)");
             let cook = task.cook.as_deref().unwrap_or("(none)");
 
             out.push_str(&format!(
-                "{:>3}-{:<3} │ {} │ {:<42} │ {:<14} │ {:<10} │ {}\n",
-                start, end, bar, desc, deps, cook, resource
+                "{} │ {:<42} │ {:<14} │ {:<10} │ {}\n",
+                bar_column, desc, deps, cook, resource
             ));
         }
 
@@ -128,7 +142,6 @@ impl Renderer for HtmlRenderer {
             rows.push_str(&format!(
                 concat!(
                     "<tr data-task-id=\"{}\" data-depends-on=\"{}\">",
-                    "<td>{:>3}–{:<3}</td>",
                     "<td><div class=\"bar-container\">",
                     "<div class=\"bar\" style=\"margin-left: {:.0}%; width: {:.0}%;\">{}</div>",
                     "</div></td>",
@@ -139,7 +152,6 @@ impl Renderer for HtmlRenderer {
                     "</tr>\n",
                 ),
                 task_id, dep_ids,
-                start, end,
                 offset_pct, width_pct, bar_label,
                 desc, deps, cook, resource,
             ));
@@ -164,7 +176,7 @@ impl Renderer for HtmlRenderer {
                 "tr.dep-upstream .bar {{ background: #ff9800 !important; }}\n",
                 "tr.dep-downstream {{ background: #e3f2fd !important; }}\n",
                 "tr.dep-downstream .bar {{ background: #2196f3 !important; }}\n",
-                ".bar-container {{ background: #f0f0f0; border-radius: 4px; height: 24px; position: relative; min-width: 200px; }}\n",
+                ".bar-container {{ background: #f0f0f0; border-radius: 4px; height: 24px; position: relative; min-width: 200px; overflow: hidden; }}\n",
                 ".bar {{ background: #4caf50; height: 24px; border-radius: 4px; display: flex; align-items: center; padding: 0 8px; color: white; font-size: 12px; white-space: nowrap; box-sizing: border-box; min-width: fit-content; cursor: pointer; }}\n",
                 "</style>\n",
                 "</head>\n",
@@ -172,7 +184,7 @@ impl Renderer for HtmlRenderer {
                 "<h1>Kitchen Planner - Gantt Chart</h1>\n",
                 "<p>Plan start time: {}</p>\n",
                 "<table id=\"gantt\">\n",
-                "<thead><tr><th>Time</th><th>Duration</th><th>Task</th><th>Dependencies</th><th>Cook</th><th>Resource</th></tr></thead>\n",
+                "<thead><tr><th>Duration</th><th>Task</th><th>Dependencies</th><th>Cook</th><th>Resource</th></tr></thead>\n",
                 "<tbody>\n",
                 "{}</tbody>\n",
                 "</table>\n",
