@@ -57,10 +57,7 @@ tr:hover { background: #fafafa; }
 }
 .bar {
   background: #4caf50; height: 26px; border-radius: 4px;
-  display: flex; align-items: center; padding: 0 8px;
-  color: #fff; font-size: 0.75rem; white-space: nowrap;
   box-sizing: border-box; cursor: pointer; transition: background 0.15s;
-  min-width: fit-content;
 }
 
 tr.dep-upstream { background: #fff3e0 !important; }
@@ -192,7 +189,7 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
         : escapedCook;
 
       rows += '<tr data-task-id="' + taskId + '" data-depends-on="' + depIds + '">'
-        + '<td><div class="bar-container"><div class="bar" style="margin-left:' + offsetPct + '%;width:' + widthPct + '%;">' + barLabel + '</div></div></td>'
+        + '<td><div class="bar-container"><div class="bar" style="margin-left:' + offsetPct + '%;width:' + widthPct + '%;" title="' + barLabel + '"></div></div></td>'
         + '<td>' + dish + '</td>'
         + '<td>' + desc + '</td>'
         + '<td>' + deps + '</td>'
