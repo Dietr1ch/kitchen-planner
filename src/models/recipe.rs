@@ -24,7 +24,7 @@ pub struct Step {
     pub description: String,
     pub duration_minutes: u32,
     #[serde(default)]
-    pub resource_id: Option<String>,
+    pub resource_kind: Option<String>,
     #[serde(default)]
     pub dependencies: Vec<String>,
     #[serde(default)]

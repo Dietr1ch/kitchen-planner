@@ -93,12 +93,14 @@ do not, everything else does).
 ** Recipe (~data/recipes/*.ron~)
 
 - =name=, =ingredients=, =steps=
-- Each =Step=: =id=, =description=, =duration_minutes=, =resource_id=,
+- Each =Step=: =id=, =description=, =duration_minutes=, =resource_kind=,
   =dependencies= (step IDs within same recipe), =optional=
 
-Resource references equipment by =id= from the kitchen (=null= means no
-equipment needed). Dependencies are resolved by prepending
-=recipe_name:= to each step ID (e.g., =s1= → =Lasagna:s1=).
+Resource references equipment by =kind= from the kitchen (e.g. ="oven"=,
+="burner"=, ="prep_surface"=; =null= means no equipment needed). The solver
+assigns each task to a specific piece of equipment matching the required kind.
+Dependencies are resolved by prepending =recipe_name:= to each step ID
+(e.g., =s1= → =Lasagna:s1=).
 
 ** Cook (~data/cooks/*.ron~)
 
@@ -110,7 +112,7 @@ used by the solver.
 
 - =start_time= (e.g. ="18:00"=)
 - =Tasks=: =id=, =description=, =start_offset_minutes=,
-  =duration_minutes=, =resource_id=, =cook=, =dependencies=
+  =duration_minutes=, =resource_kind=, =resource_id=, =cook=, =dependencies=
 
 * Solver (=schedule= binary)
 
@@ -118,18 +120,21 @@ Uses MiniZinc with Gecode to produce an optimized schedule.
 
 ** Model
 
-- Decision variables: =start[t]= (0..horizon), =cook[t]= (0..num_cooks)
+- Decision variables: =start[t]= (0..horizon), =cook[t]= (0..num_cooks),
+  =assign[t]= (0..num_equipment)
 - Constraints:
   - Dependency chains: =start[child] >= start[parent] + duration[parent]=
   - Resource disjunction: same-equipment tasks cannot overlap
+  - Equipment kind matching: each task's =assign[t]= must map to a kitchen
+    equipment whose =kind= matches the task's =resource_kind=
   - Cook disjunction: same-cook tasks cannot overlap (=oven= tasks exempt)
 - Objective: =minimize max_end * (horizon + 1) + (max_end - min_recipe_end)=
   — weighted combination of makespan and recipe end-time alignment
 
 ** Cook allocation
 
-- Tasks with =resource_id= referencing oven-kind equipment → =cook= 0 (no cook assigned)
-- Tasks with =resource_id= =None= (e.g. rest) → =cook= 0
+- Tasks with =resource_kind= =Some("oven")= → =cook= 0 (no cook assigned)
+- Tasks with =resource_kind= =None= (e.g. rest) → =cook= 0
 - All other tasks → assigned a distinct cook (1..num_cooks), blocking that
   cook for the duration
 
@@ -260,6 +265,9 @@ kitchen-planner/
   the recipe name at build time
 - ~data-depends-on~ HTML attribute uses ~, ~ (comma-space) as separator to
   handle recipe names containing spaces
+- ~resource_kind~ on recipe steps uses equipment ~kind~ (e.g. ~oven~, ~burner~,
+  ~prep_surface~); the solver assigns each task to a specific equipment instance
+  matching that kind
 - ~knife_skill~ is defined in the cook schema but not yet consumed by the solver
   (intended future use: task duration scaling)
 
@@ -310,3 +318,4 @@ Sample schedule (Lasagna + Garlic Bread, 4 cooks, ~data/~):
 - Recipe alternatives and optional ingredient/steps
 - Plan schema as formalized output (implicit in =Plan= struct)
 - Web application for guided execution with timers
+- Equipment capability requirements (e.g., large burner needed, smallest pot large enough)

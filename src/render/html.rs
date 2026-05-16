@@ -18,7 +18,7 @@ impl Renderer for HtmlRenderer {
 				.round()
 				.max(1.0);
 
-			let resource = task.resource_id.as_deref().unwrap_or("(none)");
+			let resource = resource_display(task.resource_kind.as_deref(), task.resource_id.as_deref());
 			let cook = task.cook.as_deref().unwrap_or("(none)");
 			let dish = html_escape(&task.dish);
 			let desc = html_escape(&task.description);
@@ -163,6 +163,15 @@ fn cook_color(name: &str) -> String {
 		.fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
 	let hue = hash % 360;
 	format!("hsl({}, 60%, 50%)", hue)
+}
+
+fn resource_display(kind: Option<&str>, name: Option<&str>) -> String {
+	match (kind, name) {
+		(Some(k), Some(n)) => format!("{} ({})", k, n),
+		(Some(k), None) => k.to_string(),
+		(None, Some(n)) => n.to_string(),
+		(None, None) => "(none)".to_string(),
+	}
 }
 
 fn html_escape(s: &str) -> String {

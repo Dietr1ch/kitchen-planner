@@ -189,7 +189,11 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
       var deps = shortDeps(t.dependencies || []);
       var cook = t.cook || '(none)';
       var escapedCook = escapeHtml(cook);
-      var resource = escapeHtml(t.resource_id || '(none)');
+      var resourceKind = t.resource_kind || null;
+      var resourceName = t.resource_id || null;
+      var resource = resourceKind && resourceName
+        ? resourceKind + ' (' + resourceName + ')'
+        : escapeHtml(resourceKind || resourceName || '(none)');
 
       var cookColorVal = cookColor(cook);
       var cookCell = cookColorVal

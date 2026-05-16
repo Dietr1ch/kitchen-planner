@@ -73,7 +73,7 @@ impl Renderer for TextRenderer {
             let dish = truncate(&task.dish, 12);
             let desc = truncate(&task.description, 35);
             let deps = short_deps(&task.dependencies);
-            let resource = task.resource_id.as_deref().unwrap_or("(none)");
+            let resource = resource_display(task.resource_kind.as_deref(), task.resource_id.as_deref());
             let cook = task.cook.as_deref().unwrap_or("(none)");
 
             out.push_str(&format!(
@@ -83,5 +83,14 @@ impl Renderer for TextRenderer {
         }
 
         out
+    }
+}
+
+fn resource_display(kind: Option<&str>, name: Option<&str>) -> String {
+    match (kind, name) {
+        (Some(k), Some(n)) => format!("{} ({})", k, n),
+        (Some(k), None) => k.to_string(),
+        (None, Some(n)) => n.to_string(),
+        (None, None) => "(none)".to_string(),
     }
 }

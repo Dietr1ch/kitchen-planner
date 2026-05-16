@@ -18,6 +18,8 @@ pub struct Task {
     #[serde(default)]
     pub resource_id: Option<String>,
     #[serde(default)]
+    pub resource_kind: Option<String>,
+    #[serde(default)]
     pub cook: Option<String>,
     #[serde(default)]
     pub dependencies: Vec<String>,
