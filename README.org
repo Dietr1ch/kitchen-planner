@@ -1,50 +1,274 @@
 #+title: Kitchen Planner
 
-A stub on a cooking planner.
+A CLI tool for modelling kitchen resources, recipes, and cooks, then
+generating optimized cooking schedules via constraint programming.
 
-* Goals
-** Modeling a kitchen
-We want to model all the resources available in the kitchen, including,
+* Quick Start
 
-*** Equipment
-- Stove
-  - Burners
-- Pots
-  - Sizes and materials
-- Utensils
-  - Eg, Spoons, Shears, Tongs, Whisks. Optionally specify materials.
-*** Resources
-- Food
-  - Measured in quantity, cans, by weight
-**** Materials
-- Gas
-- Wood
-- Plastic wrap
-- Baking paper
+Generate a meal plan and render it:
 
-** Modeling recipes
-- Detailed requirements, steps
-- Allow for alternatives and optional elements
+#+begin_src sh
+  nix develop
+  just plan        # solve + render text Gantt
+  just run-html /tmp/plan.html   # render as HTML
+#+end_src
 
-** Modeling cooks
-Measure skills in simple way
-- Eg, 4 levels of knife skills used to model the time it'd take to prep food.
-** Planning execution
-Have a Library + CLI tool to turn the kitchen model and a set of recipes into a plan to prepare them.
-- Allow for parallel progress and waits
-- Minimise wall-time while aligning finish times so food is warm and ready at the same time
-- Define a schema for plans
-- Use a solver for this part, but the final output should still use our schema.
+* Usage
 
-** Aiding execution
-Have a web application capable of guiding the user through a planned execution.
-- Display tasks and their progress
-- Help with timers
+Two CLI tools, piped together:
 
+#+begin_src sh
+  # Solve: kitchen + cooks + recipes → Plan JSON (stdout)
+  cargo run --bin schedule -- schedule <kitchen.json> <cooks-dir/> <recipes...>
 
-* Tasks
-** TODO Define schema
-*** TODO Kitchen Schema
-*** TODO Recipe Schema
-*** TODO Cook Schema
-*** TODO Plan Schema
+  # Render: Plan JSON → Gantt chart (text/html)
+  cargo run --bin gantt -- [--format text|html] <plan.json>
+#+end_src
+
+Example:
+
+#+begin_src sh
+  cargo run --bin schedule -- schedule data/kitchen.json data/cooks data/recipes/*.json \
+    | cargo run --bin gantt -- -
+#+end_src
+
+* Architecture
+
+** Modules (~src/~)
+
+| Module     | Contents                                           |
+|------------+----------------------------------------------------|
+| =kitchen=  | =Kitchen=, =Equipment=, =Food=, =Material= schemas |
+| =recipe=   | =Recipe=, =Step=, =Ingredient= schemas             |
+| =cook=     | =Cook=, =KnifeSkill= enum                          |
+| =plan=     | =Plan=, =Task= schemas (solver output)             |
+| =schedule= | MiniZinc model builder + solver runner             |
+| =render    | =Renderer= trait, =TextRenderer=, =HtmlRenderer=   |
+
+** Binaries
+
+| Binary     | CLI Name   | Purpose                                                 |
+|------------+------------+---------------------------------------------------------|
+| =schedule= | =schedule= | Kitchen + cooks + recipes → Plan JSON (MiniZinc solver) |
+| =gantt=    | =gantt=    | Plan JSON → text/HTML Gantt chart                       |
+
+** Data Flow
+
+#+begin_src
+kitchen.json ─┐
+cooks/*.json ─┤ schedule ─→ plan.json ─→ gantt (text)
+recipes/*.json┘                            └→ gantt (HTML)
+#+end_src
+
+* Data Model
+
+** Kitchen (~data/kitchen.json~)
+
+- =Equipment= — =id=, =name=, =kind= (=burner=, =oven=, =pot=, =prep_surface=)
+- =Food= — =id=, =name=, =quantity=, =unit=
+- =Materials= — =id=, =name=, =quantity=, =unit=
+
+Equipment =kind= determines whether a task occupies the cook (=oven= tasks
+do not, everything else does).
+
+** Recipe (~data/recipes/*.json~)
+
+- =name=, =ingredients=, =steps=
+- Each =Step=: =id=, =description=, =duration_minutes=, =resource_id=,
+  =dependencies= (step IDs within same recipe), =optional=
+
+Resource references equipment by =id= from the kitchen (=null= means no
+equipment needed). Dependencies are resolved by prepending
+=recipe_name:= to each step ID (e.g., =s1= → =Lasagna:s1=).
+
+** Cook (~data/cooks/*.json~)
+
+One JSON file per cook. =name=, =knife_skill= (=Novice=, =Intermediate=,
+=Advanced=, =Expert=). =knife_skill= is defined in the schema but not yet
+used by the solver.
+
+** Plan (solver output)
+
+- =start_time= (e.g. ="18:00"=)
+- =Tasks=: =id=, =description=, =start_offset_minutes=,
+  =duration_minutes=, =resource_id=, =cook=, =dependencies=
+
+* Solver (=schedule= binary)
+
+Uses MiniZinc with Gecode to produce an optimized schedule.
+
+** Model
+
+- Decision variables: =start[t]= (0..horizon), =cook[t]= (0..num_cooks)
+- Constraints:
+  - Dependency chains: =start[child] >= start[parent] + duration[parent]=
+  - Resource disjunction: same-equipment tasks cannot overlap
+  - Cook disjunction: same-cook tasks cannot overlap (=oven= tasks exempt)
+- Objective: =minimize max_end * (horizon + 1) + (max_end - min_recipe_end)=
+  — weighted combination of makespan and recipe end-time alignment
+
+** Cook allocation
+
+- Tasks with =resource_id= referencing oven-kind equipment → =cook= 0 (no cook assigned)
+- Tasks with =resource_id= =None= (e.g. rest) → =cook= 0
+- All other tasks → assigned a distinct cook (1..num_cooks), blocking that
+  cook for the duration
+
+* Renderer (=gantt= binary)
+
+** Text Renderer (~src/render/text.rs~)
+
+Terminal Gantt chart with proportional bars. Shows time range inside the
+duration column. Left offset is proportional to start time.
+
+** HTML Renderer (~src/render/html.rs~)
+
+Interactive HTML Gantt chart. Hovering a row highlights its upstream
+dependencies (orange) and downstream dependents (blue). Bar position
+and width are percentage-based via CSS =margin-left=/=width=.
+
+* Development
+
+** Prerequisites
+
+- Nix with flakes enabled
+- direnv (optional)
+
+** Setup
+
+#+begin_src sh
+  nix develop   # enters shell with Rust + minizinc + gecode
+  direnv allow  # optional automatic shell entry
+#+end_src
+
+** Commands
+
+| Command              | Action                    |
+|----------------------+---------------------------|
+| ~just build~         | =nix build=               |
+| ~just check~         | =nix flake check=         |
+| ~just plan~          | Generate plan from data/  |
+| ~just gantt path~    | Render a plan file        |
+| ~just run~           | plan + text gantt (piped) |
+| ~just run-html path~ | plan + HTML gantt → file  |
+| ~cargo check~        | Type-check                |
+| ~cargo nextest run~  | Run tests                 |
+
+** Project Structure
+
+#+begin_src
+kitchen-planner/
+├── Cargo.toml              # serde, serde_json, clap
+├── flake.nix               # Nix build + devShell
+├── rust-toolchain.toml     # Rust 1.75+, edition 2024
+├── shell.nix               # Shell with minizinc + gecode
+├── Justfile                # Task runner
+├── data/
+│   ├── kitchen.json        # Equipment, food, materials
+│   ├── cooks/              # One JSON per cook
+│   │   ├── alice.json
+│   │   ├── bob.json
+│   │   ├── charlie.json
+│   │   └── diana.json
+│   └── recipes/
+│       ├── lasagna.json
+│       └── garlic-bread.json
+└── src/
+    ├── lib.rs              # Module declarations
+    ├── bin/
+    │   ├── schedule.rs     # CLI: generate plan
+    │   └── gantt.rs        # CLI: render plan
+    ├── kitchen.rs          # Kitchen schema
+    ├── recipe.rs           # Recipe schema
+    ├── cook.rs             # Cook schema
+    ├── plan.rs             # Plan/Task schemas
+    ├── schedule.rs         # MiniZinc model + solver
+    └── render/
+        ├── mod.rs          # Renderer trait + shared helpers
+        ├── text.rs         # TextRenderer
+        └── html.rs         # HtmlRenderer
+#+end_src
+
+* Conventions & Decisions
+
+** Code Conventions
+
+- Rust edition 2024, stable toolchain (1.75+ from ~rust-toolchain.toml~)
+- ~serde~ with ~derive~ for all JSON schema types
+- ~clap~ with ~derive~ for CLI argument parsing (self-documenting)
+- All file path arguments accept ~-~ as alias for stdin (resolved to ~/dev/stdin~)
+- Output uses ~write!~ + ~flush~ instead of ~print!~ to avoid SIGPIPE panics
+- No library dependencies beyond ~serde~, ~serde_json~, ~clap~
+- Nix/Flakes for reproducible builds; ~shell.nix~ provides ~minizinc~ + ~gecode~
+
+** Architecture Decisions
+
+- [[https://github.com/anomalyco/opencode][opencode]]-driven development — the project was built entirely via AI-assisted pair programming
+- Replaced an initial ad-hoc sequential heuristic with MiniZinc constraint programming
+  (the CP solver produces tighter schedules by exploring interleavings a greedy
+  heuristic misses; e.g., 100 min vs 110 min makespan for 4 cooks + both recipes)
+- Weighted single scalar objective ~max_end * (horizon + 1) + (max_end - min_recipe_end)~
+  instead of MiniZinc's lexicographic ~++~ operator (which caused type errors with
+  ~var int~ on MiniZinc 2.9.3/Gecode)
+- One-indexed arrays in the MiniZinc model (native default) to avoid ~array1d~ coercion errors
+- Cook is NOT blocked during oven/rest tasks (=needs_cook= checks equipment ~kind~):
+  physically accurate (set-and-forget), enables natural interleaving (e.g., GB prep
+  during LS bake)
+- Cooks are read from a directory (~data/cooks/~) instead of a single file,
+  making it easy to add/remove cooks
+
+** Data Conventions
+
+- Task IDs use ~{recipe_name}:{step_id}~ prefix (e.g., ~Lasagna:s1~); dependencies
+  reference these prefixed IDs
+- Step dependencies within a recipe file use un-prefixed IDs; the solver prepends
+  the recipe name at build time
+- ~data-depends-on~ HTML attribute uses ~, ~ (comma-space) as separator to
+  handle recipe names containing spaces
+- ~knife_skill~ is defined in the cook schema but not yet consumed by the solver
+  (intended future use: task duration scaling)
+
+** Renderer Decisions
+
+- Time range shown inside the duration bar column (not a separate column):
+  saves horizontal space and keeps the time label physically on the bar
+- Text renderer uses ~▓~ characters with left offset proportional to start time;
+  bars that would overflow the column width are truncated (time label takes priority)
+- HTML renderer uses percentage-based ~margin-left~/~width~ with ~overflow: hidden~
+  on the bar container to prevent bars spilling into adjacent columns
+- Interactive hover highlights upstream dependencies (orange) and downstream
+  dependents (blue) via data attributes (~data-task-id~ / ~data-depends-on~)
+
+* Status
+
+Completed schemas for kitchen, recipe, cook, and plan (JSON via ~serde~).
+
+MiniZinc-based solver produces optimized schedules with:
+- Dependency chain enforcement
+- Resource contention avoidance (same equipment)
+- Cook contention avoidance (oven tasks exempt)
+- Recipe end-time alignment via weighted objective
+
+Two renderers (text terminal, interactive HTML).
+
+Sample schedule (Lasagna + Garlic Bread, 4 cooks, ~data/~):
+| Task                                     | Time   | Cook   | Resource |
+|------------------------------------------+--------+--------+----------|
+| Lasagna: Dice onion and garlic           |  0–10  | Bob    | prep-1   |
+| Lasagna: Brown ground beef               |  0–10  | Alice  | st-1     |
+| Lasagna: Sauté onion and garlic          | 10–15  | Alice  | st-2     |
+| Lasagna: Simmer tomato sauce             | 15–35  | Alice  | st-2     |
+| Lasagna: Layer lasagna                   | 35–50  | Alice  | prep-1   |
+| Garlic Bread: Mince garlic               | 50–55  | Alice  | prep-2   |
+| Lasagna: Bake lasagna                    | 50–90  | (none) | ov-1     |
+| Garlic Bread: Mix butter with garlic     | 55–58  | Alice  | prep-2   |
+| Garlic Bread: Slice baguette and spread  | 58–63  | Alice  | prep-2   |
+| Garlic Bread: Bake in oven               | 90–100 | (none) | ov-1     |
+| Lasagna: Rest before serving             | 90–100 | (none) | (none)   |
+
+** Future Work
+
+- Incorporate =knife_skill= into task duration modelling
+- Recipe alternatives and optional ingredient/steps
+- Plan schema as formalized output (implicit in =Plan= struct)
+- Web application for guided execution with timers
