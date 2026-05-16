@@ -28,7 +28,7 @@ Two CLI tools, piped together:
 Example:
 
 #+begin_src sh
-  cargo run --bin schedule -- schedule data/kitchen.ron data/cooks data/recipes/*.ron \
+  cargo run --bin schedule -- schedule data/kitchens/simple.ron data/cooks data/recipes/*.ron \
     | cargo run --bin gantt -- -
 #+end_src
 
@@ -55,14 +55,14 @@ Example:
 ** Data Flow
 
 #+begin_src
-kitchen.ron ──┐
-cooks/*.ron ──┤ schedule ─→ plan.json ─→ gantt (text)
-recipes/*.ron ┘                            └→ gantt (HTML)
+kitchens/simple.ron ──┐
+cooks/*.ron         ──┤ schedule ─→ plan.json ─→ gantt (text)
+recipes/*.ron       ──┘                       └→ gantt (HTML)
 #+end_src
 
 * Data Model
 
-** Kitchen (~data/kitchen.ron~)
+** Kitchen (~data/kitchens/*.ron~)
 
 - =Equipment= — =id=, =name=, =kind= (=burner=, =oven=, =pot=, =prep_surface=)
 - =Food= — =id=, =name=, =quantity=, =unit=
@@ -180,7 +180,8 @@ kitchen-planner/
 ├── .config/
 │   └── server.toml         # static-web-server config
 ├── data/
-│   ├── kitchen.ron         # Equipment, food, materials
+│   ├── kitchens/           # Kitchen configurations (RON)
+│   │   └── simple.ron
 │   ├── cooks/              # One RON file per cook
 │   │   ├── alice.ron
 │   │   ├── bob.ron
