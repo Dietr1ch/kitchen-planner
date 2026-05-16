@@ -250,7 +250,11 @@ output [\"start = \", show(start), \";\\ncook = \", show(cook), \";\\nassign = \
 	m
 }
 
-pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Result<Plan, ScheduleError> {
+pub fn schedule(
+	kitchen: &Kitchen,
+	cooks: &[Cook],
+	recipes: &[Recipe],
+) -> Result<Plan, ScheduleError> {
 	let num_recipes = recipes.len();
 
 	let mut tasks = Vec::new();
@@ -500,10 +504,7 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Result
 	let stdout = String::from_utf8_lossy(&output.stdout);
 
 	if !output.status.success() {
-		let mut msg = format!(
-			"minizinc exited with code {:?}",
-			output.status.code(),
-		);
+		let mut msg = format!("minizinc exited with code {:?}", output.status.code(),);
 		if !stderr.is_empty() {
 			msg.push_str(&format!("\nstderr: {}", stderr));
 		}
@@ -583,8 +584,7 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Result
 		}
 	}
 
-	let (start_vals, cook_vals, assign_vals) = last_solution
-		.ok_or(ScheduleError::NoSolution)?;
+	let (start_vals, cook_vals, assign_vals) = last_solution.ok_or(ScheduleError::NoSolution)?;
 
 	let plan_tasks: Vec<Task> = tasks
 		.iter()

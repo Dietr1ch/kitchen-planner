@@ -12,7 +12,7 @@ use kitchen_planner::models::recipe::Recipe;
 struct Cli {
 	#[arg(long)]
 	kitchen: PathBuf,
-	#[arg(long="cook")]
+	#[arg(long = "cook")]
 	cooks: Vec<PathBuf>,
 	recipes: Vec<PathBuf>,
 }
@@ -30,7 +30,10 @@ fn main() -> color_eyre::Result<()> {
 
 	let plan = kitchen_planner::schedule::schedule(&kitchen, &cooks, &recipes)
 		.wrap_err("Failed to generate schedule")?;
-	println!("{}", serde_json::to_string_pretty(&plan).wrap_err("Failed to serialize plan")?);
+	println!(
+		"{}",
+		serde_json::to_string_pretty(&plan).wrap_err("Failed to serialize plan")?
+	);
 
 	Ok(())
 }
