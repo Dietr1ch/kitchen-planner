@@ -33,4 +33,4 @@ run +ARGS:
 
 serve:
 	@echo "Open http://localhost:3004 in your browser"
-	static-web-server --config-file .config/server.toml
+	cargo run --quiet --bin web

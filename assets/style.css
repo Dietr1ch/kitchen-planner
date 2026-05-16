@@ -1,0 +1,145 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #333; background: #f7f7f7; min-height: 100vh;
+}
+h1 { font-size: 1.5rem; text-align: center; color: #222; }
+h2 { font-size: 1.15rem; color: #333; margin-bottom: 0.75rem; }
+.header { text-align: center; padding: 1.5rem 1rem 0.5rem; }
+.header p { color: #888; font-size: 0.9rem; margin-top: 0.25rem; }
+
+/* Views */
+.view { display: none; }
+.view.active { display: block; }
+
+/* Config view */
+#configView { max-width: 900px; margin: 1rem auto; padding: 0 1rem 2rem; }
+.config-section {
+  background: #fff; border: 1px solid #e0e0e0; border-radius: 8px;
+  padding: 1.25rem; margin-bottom: 1rem;
+}
+.config-section h2 { border-bottom: 1px solid #eee; padding-bottom: 0.5rem; }
+
+/* Kitchen equipment grid */
+.equipment-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.equipment-item {
+  display: flex; align-items: center; gap: 0.4rem;
+  padding: 0.4rem 0.8rem; border: 1px solid #ddd; border-radius: 6px;
+  cursor: pointer; transition: all 0.15s; font-size: 0.85rem;
+  user-select: none;
+}
+.equipment-item:hover { border-color: #999; }
+.equipment-item.selected { border-color: #4caf50; background: #e8f5e9; }
+.equipment-item .kind { color: #888; font-size: 0.75rem; margin-left: 0.25rem; }
+.equipment-item .toggle { width: 16px; height: 16px; border-radius: 3px; border: 2px solid #ccc; display: inline-flex; align-items: center; justify-content: center; font-size: 0.7rem; color: #fff; flex-shrink: 0; }
+.equipment-item.selected .toggle { background: #4caf50; border-color: #4caf50; }
+
+/* Cook cards */
+.cook-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.cook-card {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.6rem 1rem; border: 1px solid #ddd; border-radius: 8px;
+  cursor: pointer; transition: all 0.15s; user-select: none;
+}
+.cook-card:hover { border-color: #999; }
+.cook-card.selected { border-color: #4caf50; background: #e8f5e9; }
+.cook-card .name { font-weight: 500; }
+.cook-card .skills { font-size: 0.8rem; color: #666; }
+.cook-card .checkbox { width: 18px; height: 18px; border-radius: 3px; border: 2px solid #ccc; display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem; color: #fff; flex-shrink: 0; }
+.cook-card.selected .checkbox { background: #4caf50; border-color: #4caf50; }
+
+/* Recipe cards */
+.recipe-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.recipe-card {
+  display: flex; align-items: flex-start; gap: 0.6rem;
+  padding: 0.75rem 1rem; border: 1px solid #ddd; border-radius: 8px;
+  cursor: pointer; transition: all 0.15s;
+}
+.recipe-card:hover { border-color: #999; }
+.recipe-card.selected { border-color: #4caf50; background: #e8f5e9; }
+.recipe-card .checkbox { width: 18px; height: 18px; border-radius: 3px; border: 2px solid #ccc; display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem; color: #fff; flex-shrink: 0; margin-top: 1px; }
+.recipe-card.selected .checkbox { background: #4caf50; border-color: #4caf50; }
+.recipe-card .recipe-info { flex: 1; }
+.recipe-card .recipe-name { font-weight: 500; }
+.recipe-card .recipe-ingredients { font-size: 0.8rem; color: #666; margin-top: 0.15rem; }
+
+/* Recipe upload */
+.recipe-upload {
+  margin-top: 0.75rem; padding: 1rem; border: 2px dashed #bbb;
+  border-radius: 8px; text-align: center; cursor: pointer;
+  transition: all 0.15s; font-size: 0.85rem; color: #888;
+}
+.recipe-upload:hover { border-color: #4caf50; background: #f1faf1; }
+.recipe-upload input { display: none; }
+
+/* Generate button */
+.generate-row { text-align: center; margin-top: 1.5rem; }
+.btn-generate {
+  padding: 0.75rem 2.5rem; font-size: 1.1rem; border: none;
+  border-radius: 8px; background: #4caf50; color: #fff;
+  cursor: pointer; transition: background 0.15s; font-weight: 500;
+}
+.btn-generate:hover { background: #388e3c; }
+.btn-generate:disabled { background: #bbb; cursor: not-allowed; }
+
+/* Loading view */
+#loadingView {
+  text-align: center; padding: 4rem 1rem;
+}
+.spinner {
+  width: 48px; height: 48px; border: 4px solid #e0e0e0;
+  border-top-color: #4caf50; border-radius: 50%;
+  animation: spin 0.8s linear infinite; margin: 0 auto 1rem;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#loadingView p { color: #888; font-size: 0.95rem; }
+
+/* Gantt view */
+#ganttView { margin: 0 auto; padding: 0 1rem 2rem; max-width: 1200px; }
+.gantt-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem; }
+.btn-back {
+  padding: 0.5rem 1rem; border: 1px solid #ccc; border-radius: 6px;
+  background: #fff; cursor: pointer; font-size: 0.85rem; transition: background 0.15s;
+}
+.btn-back:hover { background: #f0f0f0; }
+
+/* Gantt table */
+table {
+  width: 100%; border-collapse: collapse; background: #fff;
+  border-radius: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+th {
+  background: #f5f5f5; text-align: left; padding: 10px 12px;
+  border-bottom: 2px solid #ddd; font-weight: 600; font-size: 0.85rem;
+  white-space: nowrap;
+}
+th[data-sort] { cursor: pointer; }
+th[data-sort]:hover { background: #e8e8e8; }
+td { padding: 8px 12px; border-bottom: 1px solid #eee; vertical-align: middle; font-size: 0.85rem; }
+tr:last-child td { border-bottom: none; }
+tr:hover { background: #fafafa; }
+
+.bar-container {
+  background: #f0f0f0; border-radius: 4px; height: 26px;
+  position: relative; min-width: 180px; overflow: hidden;
+}
+.bar {
+  background: #4caf50; height: 26px; border-radius: 4px;
+  box-sizing: border-box; cursor: pointer; transition: background 0.15s;
+}
+.bar-last { border-right: 3px solid #2e7d32; }
+
+tr.dep-upstream { background: #fff3e0 !important; }
+tr.dep-upstream .bar { background: #ff9800 !important; }
+tr.dep-downstream { background: #e3f2fd !important; }
+tr.dep-downstream .bar { background: #2196f3 !important; }
+.cook-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; color: #fff; font-weight: 500; font-size: 0.85rem; }
+
+#error-msg { color: #e53935; text-align: center; margin: 0.5rem 0; font-size: 0.85rem; display: none; }
+
+@media (max-width: 700px) {
+  .bar-container { min-width: 100px; }
+  th, td { padding: 6px 8px; font-size: 0.78rem; }
+  #configView { padding: 0 0.5rem 1rem; }
+  .config-section { padding: 0.75rem; }
+}

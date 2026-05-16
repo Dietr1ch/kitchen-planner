@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -250,7 +249,11 @@ output [\"start = \", show(start), \";\\ncook = \", show(cook), \";\\nassign = \
 	m
 }
 
-pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Result<Plan, ScheduleError> {
+pub fn schedule(
+	kitchen: &Kitchen,
+	cooks: &[Cook],
+	recipes: &[Recipe],
+) -> Result<Plan, ScheduleError> {
 	let num_recipes = recipes.len();
 
 	let mut tasks = Vec::new();
@@ -479,38 +482,37 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Result
 		&preheat_bake_indices,
 	);
 
-	let model_path =
-		std::env::temp_dir().join(format!("kitchen_planner_{}.mzn", std::process::id()));
-	let mut tmp = fs::File::create(&model_path)?;
-	write!(tmp, "{}", model)?;
-	drop(tmp);
-
-	let output = Command::new("minizinc")
+	let mut child = Command::new("minizinc")
 		.arg("--solver")
 		.arg("gecode")
 		.arg("--json-stream")
 		.arg("--time-limit")
 		.arg("10000")
-		.arg(&model_path)
+		.arg("-")
+		.stdin(Stdio::piped())
 		.stdout(Stdio::piped())
 		.stderr(Stdio::piped())
-		.output()?;
+		.spawn()?;
+
+	child
+		.stdin
+		.take()
+		.expect("stdin configured")
+		.write_all(model.as_bytes())?;
+
+	let output = child.wait_with_output()?;
 
 	let stderr = String::from_utf8_lossy(&output.stderr);
 	let stdout = String::from_utf8_lossy(&output.stdout);
 
 	if !output.status.success() {
-		let mut msg = format!(
-			"minizinc exited with code {:?}",
-			output.status.code(),
-		);
+		let mut msg = format!("minizinc exited with code {:?}", output.status.code(),);
 		if !stderr.is_empty() {
 			msg.push_str(&format!("\nstderr: {}", stderr));
 		}
+		msg.push_str(&format!("\nmodel:\n{}", model));
 		return Err(ScheduleError::SolverFailure(msg));
 	}
-
-	let _ = fs::remove_file(&model_path);
 	let mut last_solution: Option<(Vec<u32>, Vec<usize>, Vec<usize>)> = None;
 
 	fn parse_array_i64(s: &str) -> Option<Vec<i64>> {
@@ -583,8 +585,7 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Result
 		}
 	}
 
-	let (start_vals, cook_vals, assign_vals) = last_solution
-		.ok_or(ScheduleError::NoSolution)?;
+	let (start_vals, cook_vals, assign_vals) = last_solution.ok_or(ScheduleError::NoSolution)?;
 
 	let plan_tasks: Vec<Task> = tasks
 		.iter()

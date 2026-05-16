@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kitchen Planner</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="header">
+  <h1>Kitchen Planner</h1>
+  <p>Configure your kitchen, pick cooks and recipes, then generate an optimized cooking schedule</p>
+</div>
+
+<div id="error-msg"></div>
+
+<!-- ── Config view ── -->
+<div id="configView" class="view">
+  <div class="config-section">
+    <h2>Kitchen</h2>
+    <div id="kitchenContent">Loading…</div>
+  </div>
+
+  <div class="config-section">
+    <h2>Cooks</h2>
+    <div id="cooksContent">Loading…</div>
+  </div>
+
+  <div class="config-section">
+    <h2>Recipes</h2>
+    <div id="recipesContent">Loading…</div>
+  </div>
+
+  <div class="generate-row">
+    <button id="btnGenerate" class="btn-generate" disabled>Generate Plan</button>
+  </div>
+</div>
+
+<!-- ── Loading view ── -->
+<div id="loadingView" class="view">
+  <div class="spinner"></div>
+  <p>Solving schedule…</p>
+</div>
+
+<!-- ── Gantt view ── -->
+<div id="ganttView" class="view">
+  <div class="gantt-header">
+    <button id="btnBack" class="btn-back">&larr; Modify &amp; regenerate</button>
+    <h2></h2>
+  </div>
+  <div id="ganttContent"></div>
+</div>
+
+<script src="gantt.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
