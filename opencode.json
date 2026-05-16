@@ -13,10 +13,13 @@
     "todowrite": "allow",
     "bash": {
       "*": "ask",
+      "cargo add *": "ask",
       "cargo check *": "allow",
       "cargo clippy *": "allow",
       "cargo fmt": "allow",
       "cargo nextest run *": "allow",
+      "cargo rm *": "allow",
+      "cargo search *": "allow",
       "cargo test *": "allow",
       "cargo udeps *": "allow",
       "git diff *": "allow",
@@ -29,6 +32,7 @@
       "mkdir *": "allow",
       "nix build": "allow",
       "nix check": "allow",
+      "rg *": "allow",
       "ron-lsp check": "allow",
       "static-web-server *": "allow",
       "touch *": "allow"
