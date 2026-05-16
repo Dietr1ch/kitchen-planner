@@ -5,17 +5,18 @@ pub trait Renderer {
 }
 
 #[derive(Copy, Clone, Debug, Default, clap::ValueEnum)]
+#[clap(rename_all = "lower")]
 pub enum SortOrder {
     #[default]
-    ByStart,
-    ByCook,
+    Start,
+    Cook,
 }
 
 pub(crate) fn sorted_tasks(plan: &Plan, order: SortOrder) -> (Vec<crate::plan::Task>, u32) {
     let mut tasks = plan.tasks.clone();
     match order {
-        SortOrder::ByStart => tasks.sort_by_key(|t| t.start_offset_minutes),
-        SortOrder::ByCook => tasks.sort_by(|a, b| {
+        SortOrder::Start => tasks.sort_by_key(|t| t.start_offset_minutes),
+        SortOrder::Cook => tasks.sort_by(|a, b| {
             a.cook
                 .cmp(&b.cook)
                 .then(a.start_offset_minutes.cmp(&b.start_offset_minutes))

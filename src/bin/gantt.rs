@@ -13,7 +13,7 @@ struct Cli {
 	path: PathBuf,
 	#[arg(short, long, value_enum, default_value_t = Format::Text)]
 	format: Format,
-	#[arg(short, long, value_enum, default_value_t = SortOrder::ByStart)]
+	#[arg(short, long, value_enum, default_value_t = SortOrder::Start)]
 	sort_by: SortOrder,
 }
 

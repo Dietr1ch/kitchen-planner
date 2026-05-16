@@ -5,7 +5,7 @@ pub struct HtmlRenderer;
 
 impl Renderer for HtmlRenderer {
 	fn render(&self, plan: &Plan) -> String {
-		let (tasks, total_duration) = sorted_tasks(plan, SortOrder::ByStart);
+		let (tasks, total_duration) = sorted_tasks(plan, SortOrder::Start);
 
 		let total_f = total_duration as f64;
 		let mut rows = String::new();

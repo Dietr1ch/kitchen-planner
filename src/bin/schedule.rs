@@ -14,7 +14,8 @@ enum Cli {
     /// Generate a meal plan using MiniZinc solver
     Schedule {
         kitchen: PathBuf,
-        cooks_dir: PathBuf,
+        #[arg(long)]
+        cook: Vec<PathBuf>,
         recipes: Vec<PathBuf>,
     },
 }
@@ -25,9 +26,9 @@ fn main() {
     match cli {
         Cli::Schedule {
             kitchen,
-            cooks_dir,
+            cook: cooks,
             recipes,
-        } => schedule(kitchen, cooks_dir, recipes),
+        } => schedule(kitchen, cooks, recipes),
     }
 }
 
@@ -39,22 +40,10 @@ fn resolve_path(path: &Path) -> &Path {
     }
 }
 
-fn schedule(kitchen_path: PathBuf, cooks_dir: PathBuf, recipe_paths: Vec<PathBuf>) {
+fn schedule(kitchen_path: PathBuf, cook_paths: Vec<PathBuf>, recipe_paths: Vec<PathBuf>) {
     let kitchen: Kitchen = read_file("kitchen", &kitchen_path);
 
-    let mut cook_files: Vec<PathBuf> = std::fs::read_dir(&cooks_dir)
-        .unwrap_or_else(|e| {
-            eprintln!("Error reading cooks directory {}: {}", cooks_dir.display(), e);
-            process::exit(1);
-        })
-        .filter_map(|entry| {
-            let path = entry.ok()?.path();
-            (path.extension() == Some("ron".as_ref())).then_some(path)
-        })
-        .collect();
-    cook_files.sort();
-
-    let cooks: Vec<Cook> = cook_files.iter().map(|p| read_file("cook", p)).collect();
+    let cooks: Vec<Cook> = cook_paths.iter().map(|p| read_file("cook", p)).collect();
 
     let recipes: Vec<Recipe> = recipe_paths
         .iter()

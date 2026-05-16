@@ -19,17 +19,36 @@ Two CLI tools, piped together:
 
 #+begin_src sh
   # Solve: kitchen + cooks + recipes → Plan JSON (stdout)
-  cargo run --bin schedule -- schedule <kitchen.ron> <cooks-dir/> <recipes...>
+  cargo run \
+  	--bin schedule \
+  	-- \
+  	schedule \
+  	<kitchen.ron> \
+  	--cook <cook..> \
+  	<recipes...>
 
   # Render: Plan JSON → Gantt chart (text/html)
-  cargo run --bin gantt -- [--format text|html] <plan.json>
+  cargo run \
+  	--bin gantt \
+  	-- \
+  	[--format text|html] \
+  	<plan.json>
 #+end_src
 
 Example:
 
 #+begin_src sh
-  cargo run --bin schedule -- schedule data/kitchens/simple.ron data/cooks data/recipes/*.ron \
-    | cargo run --bin gantt -- -
+  cargo run \
+  	--bin schedule \
+  	-- \
+  	schedule \
+  	data/kitchens/simple.ron \
+  	--cook data/cooks/alice.ron \
+  	data/recipes/lasagna.ron \
+  	| cargo run \
+  	    --bin gantt \
+  	    -- \
+  	    -
 #+end_src
 
 * Architecture
@@ -231,8 +250,7 @@ kitchen-planner/
 - Cook is NOT blocked during oven/rest tasks (=needs_cook= checks equipment ~kind~):
   physically accurate (set-and-forget), enables natural interleaving (e.g., GB prep
   during LS bake)
-- Cooks are read from a directory (~data/cooks/~) instead of a single file,
-  making it easy to add/remove cooks
+- Cooks are passed via ~--cook~ flags (~data/cooks/~)
 
 ** Data Conventions
 
