@@ -236,16 +236,16 @@ kitchen-planner/
 ** Code Conventions
 
 - Rust edition 2024, stable toolchain (1.75+ from ~rust-toolchain.toml~)
-- ~serde~ with ~derive~ for all JSON schema types
+- ~serde~ with ~derive~ for all RON and JSON schema types
 - ~clap~ with ~derive~ for CLI argument parsing (self-documenting)
 - All file path arguments accept ~-~ as alias for stdin (resolved to ~/dev/stdin~)
 - Output uses ~write!~ + ~flush~ instead of ~print!~ to avoid SIGPIPE panics
-- Error handling — binaries under ~src/bin/~ return ~color_eyre::Result<()>~ and
-  propagate with ~?~ and ~.wrap_err("…")~; library code uses plain ~Result~
-  with ~thiserror~-derived error types for new domain-specific errors.
-  Never use ~process::exit~ or ~unwrap~ for recoverable errors in binaries.
-- No library dependencies beyond ~serde~, ~serde_json~, ~ron~, ~clap~,
-  ~strum~, ~thiserror~, ~googletest~
+- Error handling
+  — Binaries (under ~src/bin/~) return ~color_eyre::Result<()>~ and propagate with ~?~ and ~.wrap_err("…")~.
+  - Library code uses plain ~Result~ with ~thiserror~-derived error types for new domain-specific errors.
+- Never use ~process::exit~ or ~unwrap~ for recoverable errors in binaries.
+- Library dependencies are fine as long as they pull their own weight.
+  - Currently we use ~serde~, ~serde_json~, ~ron~, ~clap~, ~strum~, ~thiserror~, ~googletest~.
 - Nix/Flakes for reproducible builds; ~shell.nix~ provides ~minizinc~ + ~gecode~
 
 ** Architecture Decisions
