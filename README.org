@@ -59,7 +59,7 @@ Example:
 |------------+----------------------------------------------------|
 | =kitchen=  | =Kitchen=, =Equipment=, =Food=, =Material= schemas |
 | =recipe=   | =Recipe=, =Step=, =Ingredient= schemas             |
-| =cook=     | =Cook=, =KnifeSkill= enum                          |
+| =cook=     | =Cook=, =SkillLevel= enum                          |
 | =plan=     | =Plan=, =Task= schemas (solver output)             |
 | =schedule= | MiniZinc model builder + solver runner             |
 | =render    | =Renderer= trait, =TextRenderer=, =HtmlRenderer=   |
@@ -96,7 +96,8 @@ equipment. Whether a task occupies a cook is controlled by the
 
 - =name=, =ingredients=, =steps=
 - Each =Step=: =id=, =description=, =duration_minutes=, =resource_kind=,
-  =dependencies= (step IDs within same recipe), =optional=, =needs_cook=
+  =dependencies= (step IDs within same recipe), =optional=, =needs_cook=,
+  =skill=, =min_skill_level=, =duration_by_skill=
 
 Resource references equipment by =kind= from the kitchen (e.g. ="oven"=,
 ="burner"=, ="prep_surface"=; =null= means no equipment needed). The solver
@@ -106,9 +107,11 @@ Dependencies are resolved by prepending =recipe_name:= to each step ID
 
 ** Cook (~data/cooks/*.ron~)
 
-One JSON file per cook. =name=, =knife_skill= (=Novice=, =Intermediate=,
-=Advanced=, =Expert=). =knife_skill= is defined in the schema but not yet
-used by the solver.
+One RON file per cook. =name=, =skills= (map of skill name to =SkillLevel=:
+=Unskilled=, =Novice=, =Intermediate=, =Advanced=, =Expert=). The solver
+uses skills to determine effective task durations: if a step defines
+=duration_by_skill=, the solver picks the best available duration matching
+the assigned cook's skill level, falling back to the nearest lower level.
 
 ** Plan (solver output)
 
@@ -130,6 +133,8 @@ Uses MiniZinc with Gecode to produce an optimized schedule.
   - Equipment kind matching: each task's =assign[t]= must map to a kitchen
     equipment whose =kind= matches the task's =resource_kind=
   - Cook disjunction: same-cook tasks cannot overlap (=oven= tasks exempt)
+  - Skill eligibility: tasks requiring a skill are only assigned to cooks
+    whose skill level meets =min_skill_level=
 - Objective: =minimize max_end * (horizon + 1) + (max_end - min_recipe_end)=
   — weighted combination of makespan and recipe end-time alignment
 
@@ -138,6 +143,9 @@ Uses MiniZinc with Gecode to produce an optimized schedule.
 - Tasks with =needs_cook= =false= (oven, rest, thaw, cooling) → =cook= 0 (no cook assigned)
 - Tasks with =needs_cook= =true= → assigned a distinct cook (1..num_cooks), blocking that
   cook for the duration
+- Tasks requiring a skill (=skill= / =min_skill_level=) only assigned to cooks
+  whose level meets or exceeds the requirement; effective duration is looked up
+  from =duration_by_skill=, falling back to the nearest lower level
 
 * Renderer (=gantt= binary)
 
@@ -240,7 +248,7 @@ kitchen-planner/
 - ~clap~ with ~derive~ for CLI argument parsing (self-documenting)
 - All file path arguments accept ~-~ as alias for stdin (resolved to ~/dev/stdin~)
 - Output uses ~write!~ + ~flush~ instead of ~print!~ to avoid SIGPIPE panics
-- No library dependencies beyond ~serde~, ~serde_json~, ~ron~, ~clap~
+- No library dependencies beyond ~serde~, ~serde_json~, ~ron~, ~clap~, ~strum~
 - Nix/Flakes for reproducible builds; ~shell.nix~ provides ~minizinc~ + ~gecode~
 
 ** Architecture Decisions
@@ -272,8 +280,11 @@ kitchen-planner/
 - ~needs_cook~ on recipe steps (defaults to ~true~) controls whether the step
   occupies a cook. Set to ~false~ for oven baking, resting, thawing, cooling
   — any step that doesn't need active cook attention
-- ~knife_skill~ is defined in the cook schema but not yet consumed by the solver
-  (intended future use: task duration scaling)
+- ~skill~ / ~min_skill_level~ / ~duration_by_skill~ on recipe steps enable
+  skill-adaptive durations; the solver assigns tasks to eligible cooks and
+  picks the best available duration for their skill level
+- ~data-start~ and ~data-cook~ HTML attributes on Gantt rows enable
+  client-side column sorting by start time or cook name
 
 ** Renderer Decisions
 
@@ -285,6 +296,8 @@ kitchen-planner/
   on the bar container to prevent bars spilling into adjacent columns
 - Interactive hover highlights upstream dependencies (orange) and downstream
   dependents (blue) via data attributes (~data-task-id~ / ~data-depends-on~)
+- Sort order can be by start time or by cook name via ~gantt --sort-by start|cook~
+  (client-side in the web app via column header clicks)
 - Two HTML rendering paths: Rust binary (~gantt --format html~) generates
   static HTML at build time; client-side web app (~assets/gantt.html~) loads
   and renders plan JSON at runtime via drag-and-drop or =?url=
@@ -298,6 +311,8 @@ MiniZinc-based solver produces optimized schedules with:
 - Resource contention avoidance (same equipment)
 - Cook contention avoidance (oven tasks exempt)
 - Recipe end-time alignment via weighted objective
+- Skill-adaptive durations: cooks are assigned to tasks matching their skill
+  level, and effective durations are picked from =duration_by_skill=
 
 Three renderers (text terminal, Rust HTML, client-side web app).
 
@@ -318,7 +333,6 @@ Sample schedule (Lasagna + Garlic Bread, 4 cooks, ~data/~):
 
 ** Future Work
 
-- Incorporate =knife_skill= into task duration modelling
 - Recipe alternatives and optional ingredient/steps
 - Plan schema as formalized output (implicit in =Plan= struct)
 - Web application for guided execution with timers

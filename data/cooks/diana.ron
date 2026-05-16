@@ -1,4 +1,6 @@
 (
   name: "Diana",
-  knife_skill: Expert,
+  skills: {
+    "knife_work": Expert,
+  },
 )

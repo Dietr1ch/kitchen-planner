@@ -1,4 +1,8 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
+
+use super::cook::SkillLevel;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Recipe {
@@ -31,6 +35,12 @@ pub struct Step {
 	pub optional: bool,
 	#[serde(default = "default_true")]
 	pub needs_cook: bool,
+	#[serde(default)]
+	pub skill: Option<String>,
+	#[serde(default)]
+	pub min_skill_level: Option<SkillLevel>,
+	#[serde(default)]
+	pub duration_by_skill: Option<HashMap<SkillLevel, u32>>,
 }
 
 fn default_true() -> bool {

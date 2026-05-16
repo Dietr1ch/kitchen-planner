@@ -3,7 +3,9 @@ use std::fs;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use crate::models::cook::Cook;
+use strum::IntoEnumIterator;
+
+use crate::models::cook::{Cook, SkillLevel, duration_for_skill};
 use crate::models::kitchen::Kitchen;
 use crate::models::plan::{Plan, Task};
 use crate::models::recipe::Recipe;
@@ -24,6 +26,11 @@ fn build_model(
 	task_kind: &[usize],
 	kind_start: &[usize],
 	kind_end: &[usize],
+	eff_duration: &[Vec<u32>],
+	num_skills: usize,
+	cook_skill_level: &[Vec<usize>],
+	required_skill: &[usize],
+	min_level: &[usize],
 ) -> String {
 	let num_tasks = durations.len();
 	let num_deps = deps_from.len();
@@ -36,6 +43,7 @@ fn build_model(
 	m.push_str(&format!("int: num_deps = {};\n", num_deps));
 	m.push_str(&format!("int: num_equipment = {};\n", num_equipment));
 	m.push_str(&format!("int: num_kinds = {};\n", num_kinds));
+	m.push_str(&format!("int: num_skills = {};\n", num_skills));
 
 	m.push_str("array[1..num_tasks] of int: duration = [");
 	for (i, d) in durations.iter().enumerate() {
@@ -45,6 +53,23 @@ fn build_model(
 		m.push_str(&d.to_string());
 	}
 	m.push_str("];\n");
+
+	let eff_flat: Vec<String> = eff_duration
+		.iter()
+		.flat_map(|row| row.iter())
+		.map(|v| v.to_string())
+		.collect();
+	m.push_str(&format!(
+		"array[0..num_cooks, 1..num_tasks] of int: eff_duration = array2d(0..num_cooks, 1..num_tasks, [{}]);\n",
+		eff_flat.join(", "),
+	));
+
+	m.push_str("array[1..num_tasks] of var 0..horizon: actual_duration;\n");
+	m.push_str("constraint forall(t in 1..num_tasks)(\n");
+	m.push_str(
+		"  actual_duration[t] = if needs_cook[t] then eff_duration[cook[t], t] else duration[t] endif\n",
+	);
+	m.push_str(");\n");
 
 	m.push_str("array[1..num_equipment] of int: equip_kind = [");
 	for (i, k) in equip_kind.iter().enumerate() {
@@ -66,11 +91,19 @@ fn build_model(
 
 	m.push_str(&format!(
 		"array[1..num_kinds] of int: kind_start = [{}];\n",
-		kind_start.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", ")
+		kind_start[1..]
+			.iter()
+			.map(|v| v.to_string())
+			.collect::<Vec<_>>()
+			.join(", ")
 	));
 	m.push_str(&format!(
 		"array[1..num_kinds] of int: kind_end = [{}];\n",
-		kind_end.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", ")
+		kind_end[1..]
+			.iter()
+			.map(|v| v.to_string())
+			.collect::<Vec<_>>()
+			.join(", ")
 	));
 
 	m.push_str("array[1..num_tasks] of bool: needs_cook = [");
@@ -109,17 +142,47 @@ fn build_model(
 	}
 	m.push_str("];\n");
 
+	{
+		let flat: Vec<String> = cook_skill_level
+			.iter()
+			.flat_map(|row| row[1..].iter())
+			.map(|v| v.to_string())
+			.collect();
+		m.push_str(&format!(
+			"array[0..num_cooks, 1..num_skills] of int: cook_skill_level = array2d(0..num_cooks, 1..num_skills, [{}]);\n",
+			flat.join(", "),
+		));
+	}
+
+	m.push_str("array[1..num_tasks] of int: required_skill = [");
+	for (i, &s) in required_skill.iter().enumerate() {
+		if i > 0 {
+			m.push_str(", ");
+		}
+		m.push_str(&s.to_string());
+	}
+	m.push_str("];\n");
+
+	m.push_str("array[1..num_tasks] of int: min_level = [");
+	for (i, &l) in min_level.iter().enumerate() {
+		if i > 0 {
+			m.push_str(", ");
+		}
+		m.push_str(&l.to_string());
+	}
+	m.push_str("];\n");
+
 	m.push_str("\
 array[1..num_tasks] of var 0..horizon: start;
 array[1..num_tasks] of var 0..num_cooks: cook;
 array[1..num_tasks] of var 0..num_equipment: assign;
 
 constraint forall(i in 1..num_deps)(
-  start[deps_to[i]] >= start[deps_from[i]] + duration[deps_from[i]]
+  start[deps_to[i]] >= start[deps_from[i]] + actual_duration[deps_from[i]]
 );
 
 constraint forall(i in 1..num_tasks, j in 1..num_tasks where i < j /\\ assign[i] > 0 /\\ assign[i] = assign[j])(
-  start[i] + duration[i] <= start[j] \\/ start[j] + duration[j] <= start[i]
+  start[i] + actual_duration[i] <= start[j] \\/ start[j] + actual_duration[j] <= start[i]
 );
 
 constraint forall(t in 1..num_tasks where task_kind[t] > 0)(
@@ -133,12 +196,16 @@ constraint forall(i in 1..num_tasks where needs_cook[i])(cook[i] > 0);
 constraint forall(i in 1..num_tasks where not needs_cook[i])(cook[i] = 0);
 
 constraint forall(i in 1..num_tasks, j in 1..num_tasks where i < j /\\ needs_cook[i] /\\ needs_cook[j] /\\ cook[i] = cook[j])(
-  start[i] + duration[i] <= start[j] \\/ start[j] + duration[j] <= start[i]
+  start[i] + actual_duration[i] <= start[j] \\/ start[j] + actual_duration[j] <= start[i]
+);
+
+constraint forall(t in 1..num_tasks where required_skill[t] > 0)(
+  cook_skill_level[cook[t], required_skill[t]] >= min_level[t]
 );
 
 array[1..num_recipes] of var 0..horizon: recipe_end;
 constraint forall(r in 1..num_recipes)(
-  recipe_end[r] = max([start[t] + duration[t] | t in 1..num_tasks where recipe_of[t] = r])
+  recipe_end[r] = max([start[t] + actual_duration[t] | t in 1..num_tasks where recipe_of[t] = r])
 );
 
 var 0..horizon: max_end = max(recipe_end);
@@ -175,6 +242,9 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
 				dependencies: deps,
 				recipe_idx: ri,
 				needs_cook: step.needs_cook,
+				duration_by_skill: step.duration_by_skill.clone(),
+				skill: step.skill.clone(),
+				min_skill_level: step.min_skill_level,
 			});
 		}
 	}
@@ -245,6 +315,63 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
 	let needs_cook_arr: Vec<bool> = tasks.iter().map(|t| t.needs_cook).collect();
 	let recipe_of: Vec<usize> = tasks.iter().map(|t| t.recipe_idx).collect();
 
+	// Collect unique skill names referenced by recipe steps
+	let mut skill_to_idx: HashMap<&str, usize> = HashMap::new();
+	for task in &tasks {
+		if let Some(ref skill_name) = task.skill {
+			let len = skill_to_idx.len();
+			skill_to_idx.entry(skill_name).or_insert(len + 1);
+		}
+	}
+	let num_skills = skill_to_idx.len();
+
+	// Build cook-skill matrix: cook_skill_level[c][s] = numeric level (0..=4)
+	let mut cook_skill_level = vec![vec![0usize; num_skills + 1]; num_cooks + 1];
+	for (ci, cook) in cooks.iter().enumerate() {
+		let c = ci + 1;
+		for (skill_name, level) in &cook.skills {
+			if let Some(&si) = skill_to_idx.get(skill_name.as_str()) {
+				cook_skill_level[c][si] = *level as u8 as usize;
+			}
+		}
+	}
+
+	// Per-task skill arrays
+	let required_skill: Vec<usize> = tasks
+		.iter()
+		.map(|t| {
+			t.skill
+				.as_deref()
+				.and_then(|s| skill_to_idx.get(s).copied())
+				.unwrap_or(0)
+		})
+		.collect();
+
+	let min_level: Vec<usize> = tasks
+		.iter()
+		.map(|t| t.min_skill_level.map(|l| l as u8 as usize).unwrap_or(0))
+		.collect();
+
+	// Pre-compute effective durations per (cook, task) pair
+	let num_tasks = tasks.len();
+	let mut eff_duration = vec![vec![0u32; num_tasks]; num_cooks + 1];
+	for c in 0..=num_cooks {
+		for (t, task) in tasks.iter().enumerate() {
+			if c == 0 {
+				eff_duration[c][t] = task.duration_minutes;
+			} else if let Some(ref map) = task.duration_by_skill {
+				let si = required_skill[t];
+				let level = SkillLevel::iter()
+					.nth(cook_skill_level[c][si])
+					.expect("valid skill level index");
+				eff_duration[c][t] =
+					duration_for_skill(map, level).unwrap_or(task.duration_minutes);
+			} else {
+				eff_duration[c][t] = task.duration_minutes;
+			}
+		}
+	}
+
 	let model = build_model(
 		&durations,
 		&needs_cook_arr,
@@ -260,6 +387,11 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
 		&task_kind,
 		&kind_start,
 		&kind_end,
+		&eff_duration,
+		num_skills,
+		&cook_skill_level,
+		&required_skill,
+		&min_level,
 	);
 
 	let model_path =
@@ -390,12 +522,18 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
 				.cloned()
 				.collect();
 
+			let actual_dur = if needs_cook_arr[i] {
+				eff_duration[cook_vals[i]][i]
+			} else {
+				durations[i]
+			};
+
 			Task {
 				id: task.id.clone(),
 				dish: task.id.split(':').next().unwrap_or("").to_string(),
 				description: task.description.clone(),
 				start_offset_minutes: start_vals[i],
-				duration_minutes: task.duration_minutes,
+				duration_minutes: actual_dur,
 				resource_id: assigned_resource,
 				resource_kind: task.resource_kind.clone(),
 				cook: cook_name,
@@ -423,4 +561,7 @@ struct TaskData {
 	dependencies: Vec<String>,
 	recipe_idx: usize,
 	needs_cook: bool,
+	duration_by_skill: Option<HashMap<SkillLevel, u32>>,
+	skill: Option<String>,
+	min_skill_level: Option<SkillLevel>,
 }
