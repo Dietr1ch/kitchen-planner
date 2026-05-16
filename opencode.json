@@ -1,0 +1,67 @@
+// Project-specific OpenCode configuration
+//
+// Overrides ~/.config/opencode/opencode.jsonc
+//
+// References:
+// - https://opencode.ai/docs/config/
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "*": "ask",
+    "list": "allow",
+    "todoread": "allow",
+    "todowrite": "allow",
+    "bash": {
+      "*": "ask",
+      "cargo check *": "allow",
+      "cargo clippy *": "allow",
+      "cargo fmt": "allow",
+      "cargo nextest run *": "allow",
+      "cargo test *": "allow",
+      "cargo udeps *": "allow",
+      "git diff *": "allow",
+      "git log *": "allow",
+      "git ls-files *": "allow",
+      "git restore *": "allow",
+      "git status *": "allow",
+      "just *": "allow",
+      "ls *": "allow",
+      "mkdir *": "allow",
+      "nix build": "allow",
+      "nix check": "allow",
+      "ron-lsp check": "allow",
+      "static-web-server *": "allow",
+      "touch *": "allow"
+    },
+    "read": {
+      "*": "ask",
+      "*.env": "deny",
+      "*.env.*": "deny",
+      "*.env.example": "allow",
+      "Justfile": "allow",
+      "*.org": "allow",
+      "*.md": "allow",
+      "*.nix": "allow",
+      "assets/**": "allow",
+      "data/**": "allow",
+      "src/**": "allow"
+    },
+    "edit": {
+      "*": "ask",
+      "*.nix": "allow",
+      "*.org": "allow",
+      "Cargo.lock": "deny",
+      "Cargo.toml": "deny",
+      "Justfile": "allow",
+      "assets/**": "allow",
+      "data/**": "allow",
+      "src/**": "allow"
+    },
+    "lsp": {
+      "rust": "allow",
+      "ron": "allow"
+    },
+    "webfetch": "ask",
+    "websearch": "ask"
+  }
+}
