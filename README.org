@@ -127,6 +127,17 @@ Interactive HTML Gantt chart. Hovering a row highlights its upstream
 dependencies (orange) and downstream dependents (blue). Bar position
 and width are percentage-based via CSS =margin-left=/=width=.
 
+*** Self-contained Web App (~assets/gantt.html~)
+
+Standalone client-side Gantt chart viewer. Load a plan JSON file via
+drag-and-drop, file picker, or a =?url= query parameter. Implemented in
+pure HTML/CSS/JS with no external dependencies. Served locally via
+=static-web-server=:
+
+#+begin_src sh
+  just serve
+#+end_src
+
 * Development
 
 ** Prerequisites
@@ -151,6 +162,7 @@ and width are percentage-based via CSS =margin-left=/=width=.
 | ~just gantt path~    | Render a plan file        |
 | ~just run~           | plan + text gantt (piped) |
 | ~just run-html path~ | plan + HTML gantt → file  |
+| ~just serve~         | Serve web app at localhost:3004 |
 | ~cargo check~        | Type-check                |
 | ~cargo nextest run~  | Run tests                 |
 
@@ -163,6 +175,10 @@ kitchen-planner/
 ├── rust-toolchain.toml     # Rust 1.75+, edition 2024
 ├── shell.nix               # Shell with minizinc + gecode
 ├── Justfile                # Task runner
+├── assets/
+│   └── gantt.html          # Self-contained Gantt chart web app
+├── .config/
+│   └── server.toml         # static-web-server config
 ├── data/
 │   ├── kitchen.json        # Equipment, food, materials
 │   ├── cooks/              # One JSON per cook
@@ -238,6 +254,9 @@ kitchen-planner/
   on the bar container to prevent bars spilling into adjacent columns
 - Interactive hover highlights upstream dependencies (orange) and downstream
   dependents (blue) via data attributes (~data-task-id~ / ~data-depends-on~)
+- Two HTML rendering paths: Rust binary (~gantt --format html~) generates
+  static HTML at build time; client-side web app (~assets/gantt.html~) loads
+  and renders plan JSON at runtime via drag-and-drop or =?url=
 
 * Status
 
@@ -249,7 +268,7 @@ MiniZinc-based solver produces optimized schedules with:
 - Cook contention avoidance (oven tasks exempt)
 - Recipe end-time alignment via weighted objective
 
-Two renderers (text terminal, interactive HTML).
+Three renderers (text terminal, Rust HTML, client-side web app).
 
 Sample schedule (Lasagna + Garlic Bread, 4 cooks, ~data/~):
 | Task                                     | Time   | Cook   | Resource |
