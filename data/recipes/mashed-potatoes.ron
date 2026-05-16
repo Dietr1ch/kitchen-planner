@@ -12,7 +12,7 @@
       skill: Some("knife_work"), min_skill_level: Some(Novice),
       duration_by_skill: Some({ Unskilled: 15, Novice: 10, Intermediate: 8, Advanced: 7, Expert: 6 })),
     (id: "s2", description: "Boil potatoes in salted water", duration_minutes: 25, resource_kind: Some("burner"), dependencies: ["s1"], optional: false),
-    (id: "s3", description: "Drain potatoes", duration_minutes: 2, resource_kind: Some("prep_surface"), dependencies: ["s2"], optional: false),
+    (id: "s3", description: "Drain potatoes", duration_minutes: 2, resource_kind: Some("sink"), dependencies: ["s2"], optional: false),
     (id: "s4", description: "Mash with butter and milk", duration_minutes: 5, resource_kind: Some("prep_surface"), dependencies: ["s3"], optional: false),
     (id: "s5", description: "Season to taste", duration_minutes: 2, resource_kind: Some("prep_surface"), dependencies: ["s4"], optional: true),
   ],

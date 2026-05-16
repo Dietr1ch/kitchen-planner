@@ -10,6 +10,7 @@
     (id: "pot-3", name: "Frying Pan", kind: "pot"),
     (id: "prep-1", name: "Main Counter", kind: "prep_surface"),
     (id: "prep-2", name: "Island Counter", kind: "prep_surface"),
+    (id: "sink-1", name: "Kitchen Sink", kind: "sink"),
   ],
   food: [
     (id: "fl-1", name: "Flour", quantity: 2000.0, unit: "g"),
