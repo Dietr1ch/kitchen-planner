@@ -620,7 +620,6 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
 		.collect();
 
 	Plan {
-		start_time: "18:00".to_string(),
 		tasks: plan_tasks,
 	}
 }

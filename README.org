@@ -115,7 +115,6 @@ the assigned cook's skill level, falling back to the nearest lower level.
 
 ** Plan (solver output)
 
-- =start_time= (e.g. ="18:00"=)
 - =Tasks=: =id=, =description=, =start_offset_minutes=,
   =duration_minutes=, =resource_kind=, =resource_id=, =cook=, =dependencies=
 

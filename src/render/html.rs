@@ -101,7 +101,6 @@ impl Renderer for HtmlRenderer {
 				"</head>\n",
 				"<body>\n",
 				"<h1>Kitchen Planner - Gantt Chart</h1>\n",
-				"<p>Plan start time: {}</p>\n",
 				"<table id=\"gantt\">\n",
 				"<thead><tr><th data-sort=\"start\">Duration \u{2195}</th><th>Dish</th><th>Task</th><th>Dependencies</th><th data-sort=\"cook\">Cook \u{2195}</th><th>Resource</th></tr></thead>\n",
 				"<tbody>\n",
@@ -153,7 +152,7 @@ impl Renderer for HtmlRenderer {
 				"</body>\n",
 				"</html>\n",
 			),
-			plan.start_time, rows,
+			rows,
 		)
 	}
 }

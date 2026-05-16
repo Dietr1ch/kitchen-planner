@@ -13,9 +13,6 @@ body {
 h1 { font-size: 1.5rem; text-align: center; color: #222; }
 .header { text-align: center; padding: 1.5rem 1rem 0.5rem; }
 .header p { color: #888; font-size: 0.9rem; margin-top: 0.25rem; }
-.plan-info { text-align: center; padding: 0 1rem 1rem; display: none; }
-.plan-info p { color: #666; font-size: 0.95rem; }
-
 .drop-zone {
   border: 2px dashed #bbb; border-radius: 12px; padding: 3rem 2rem;
   text-align: center; cursor: pointer; transition: all 0.2s;
@@ -93,10 +90,6 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
   <input type="file" id="file-input" accept=".json,application/json">
 </div>
 
-<div class="plan-info" id="planInfo">
-  <p>Plan start time: <span id="startTime"></span></p>
-</div>
-
 <div class="gantt-wrap" id="ganttWrap">
   <table id="ganttTable">
     <thead>
@@ -119,8 +112,6 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
   const fileInput = document.getElementById('file-input');
   const ganttWrap = document.getElementById('ganttWrap');
   const ganttBody = document.getElementById('ganttBody');
-  const planInfo = document.getElementById('planInfo');
-  const startTimeSpan = document.getElementById('startTime');
   const errorMsg = document.getElementById('error-msg');
 
   function showError(msg) {
@@ -217,8 +208,6 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
     loadedPlan = plan;
     showError('');
     sortAndRender(document.getElementById('sortSelect').value);
-    startTimeSpan.textContent = plan.start_time || '(not set)';
-    planInfo.style.display = 'block';
     ganttWrap.classList.add('visible');
     dropZone.classList.add('has-plan');
     dropZone.querySelector('.icon').style.display = 'none';

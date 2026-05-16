@@ -19,7 +19,6 @@ impl Renderer for TextRenderer {
 		let mut out = String::new();
 
 		out.push_str("Kitchen Planner - Gantt Chart\n\n");
-		out.push_str(&format!("Plan start time: {}\n\n", plan.start_time));
 		out.push_str(&format!(
 			"{:<bar_width$} │ {:<12} │ {:<38} │ {:<14} │ {:<10} │ {}\n",
 			"Duration",
