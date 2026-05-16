@@ -55,14 +55,14 @@ Example:
 
 ** Modules (~src/~)
 
-| Module     | Contents                                           |
-|------------+----------------------------------------------------|
-| =kitchen=  | =Kitchen=, =Equipment=, =Food=, =Material= schemas |
-| =recipe=   | =Recipe=, =Step=, =Ingredient= schemas             |
-| =cook=     | =Cook=, =SkillLevel= enum                          |
-| =plan=     | =Plan=, =Task= schemas (solver output)             |
-| =schedule= | MiniZinc model builder + solver runner             |
-| =render    | =Renderer= trait, =TextRenderer=, =HtmlRenderer=   |
+| Module             | Contents                                           |
+|--------------------+----------------------------------------------------|
+| =models::kitchen=  | =Kitchen=, =Equipment=, =Food=, =Material= schemas |
+| =models::recipe=   | =Recipe=, =Step=, =Ingredient= schemas             |
+| =models::cook=     | =Cook=, =SkillLevel= enum                          |
+| =models::plan=     | =Plan=, =Task= schemas (solver output)             |
+| =schedule=         | MiniZinc model builder + solver runner             |
+| =render=           | =Renderer= trait, =TextRenderer=, =HtmlRenderer=   |
 
 ** Binaries
 
@@ -227,10 +227,12 @@ kitchen-planner/
     ├── bin/
     │   ├── schedule.rs     # CLI: generate plan
     │   └── gantt.rs        # CLI: render plan
-    ├── kitchen.rs          # Kitchen schema
-    ├── recipe.rs           # Recipe schema
-    ├── cook.rs             # Cook schema
-    ├── plan.rs             # Plan/Task schemas
+    ├── models/
+    │   ├── mod.rs          # Module declarations
+    │   ├── kitchen.rs      # Kitchen schema
+    │   ├── recipe.rs       # Recipe schema
+    │   ├── cook.rs         # Cook schema
+    │   └── plan.rs         # Plan/Task schemas
     ├── schedule.rs         # MiniZinc model + solver
     └── render/
         ├── mod.rs          # Renderer trait + shared helpers
