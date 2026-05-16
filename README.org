@@ -73,7 +73,7 @@ Example:
 
 #+begin_src
 kitchens/simple.ron ──┐
-cooks/*.ron         ──┤ schedule ─→ plan.json ─→ gantt (text)
+cooks/*.ron         ──┤ schedule ─→ plan.json ┬→ gantt (text)
 recipes/*.ron       ──┘                       └→ gantt (HTML)
 #+end_src
 
@@ -178,17 +178,17 @@ pure HTML/CSS/JS with no external dependencies. Served locally via
 
 ** Commands
 
-| Command              | Action                    |
-|----------------------+---------------------------|
-| ~just build~         | =nix build=               |
-| ~just check~         | =nix flake check=         |
-| ~just plan~          | Generate plan from data/  |
-| ~just gantt path~    | Render a plan file        |
-| ~just run~           | plan + text gantt (piped) |
-| ~just run-html path~ | plan + HTML gantt → file  |
+| Command              | Action                          |
+|----------------------+---------------------------------|
+| ~just build~         | =nix build=                     |
+| ~just check~         | =nix flake check=               |
+| ~just plan~          | Generate plan from data/        |
+| ~just gantt path~    | Render a plan file              |
+| ~just run~           | plan + text gantt (piped)       |
+| ~just run-html path~ | plan + HTML gantt → file        |
 | ~just serve~         | Serve web app at localhost:3004 |
-| ~cargo check~        | Type-check                |
-| ~cargo nextest run~  | Run tests                 |
+| ~cargo check~        | Type-check                      |
+| ~cargo nextest run~  | Run tests                       |
 
 ** Project Structure
 
