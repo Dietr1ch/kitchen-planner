@@ -28,8 +28,9 @@ fn main() -> color_eyre::Result<()> {
 	let recipes: Vec<Recipe> =
 		io::read_ron_files(&args.recipes).wrap_err("Failed to read Recipe RON files")?;
 
-	let plan = kitchen_planner::schedule::schedule(&kitchen, &cooks, &recipes);
-	println!("{}", serde_json::to_string_pretty(&plan).unwrap());
+	let plan = kitchen_planner::schedule::schedule(&kitchen, &cooks, &recipes)
+		.wrap_err("Failed to generate schedule")?;
+	println!("{}", serde_json::to_string_pretty(&plan).wrap_err("Failed to serialize plan")?);
 
 	Ok(())
 }

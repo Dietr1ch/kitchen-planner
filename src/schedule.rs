@@ -10,6 +10,16 @@ use crate::models::kitchen::Kitchen;
 use crate::models::plan::{Plan, Task};
 use crate::models::recipe::Recipe;
 
+#[derive(Debug, thiserror::Error)]
+pub enum ScheduleError {
+	#[error("failed to create or write model file")]
+	IO(#[from] std::io::Error),
+	#[error("solver failed: {0}")]
+	SolverFailure(String),
+	#[error("no solution found from solver")]
+	NoSolution,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_model(
 	durations: &[u32],
@@ -240,7 +250,7 @@ output [\"start = \", show(start), \";\\ncook = \", show(cook), \";\\nassign = \
 	m
 }
 
-pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
+pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Result<Plan, ScheduleError> {
 	let num_recipes = recipes.len();
 
 	let mut tasks = Vec::new();
@@ -280,20 +290,20 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
 	// heat far before the ingredients are ready.
 	let mut preheat_insertions: Vec<(usize, String, u32, String, u16)> = Vec::new();
 	for (i, task) in tasks.iter().enumerate() {
-		if let Some(temp) = task.temperature_celsius {
-			if let Some(ref kind) = task.resource_kind {
-				let min_rate = kitchen
-					.equipment
-					.iter()
-					.filter(|e| e.kind == *kind)
-					.map(|e| e.preheat_rate_minutes_per_celsius)
-					.fold(f64::INFINITY, f64::min);
-				if min_rate.is_finite() {
-					let delta = temp as f64 - kitchen.ambient_temperature_celsius;
-					let duration = (min_rate * delta).round() as u32;
-					let preheat_id = format!("{}.preheat", task.id);
-					preheat_insertions.push((i, preheat_id, duration, kind.clone(), temp));
-				}
+		if let Some(temp) = task.temperature_celsius
+			&& let Some(ref kind) = task.resource_kind
+		{
+			let min_rate = kitchen
+				.equipment
+				.iter()
+				.filter(|e| e.kind == *kind)
+				.map(|e| e.preheat_rate_minutes_per_celsius)
+				.fold(f64::INFINITY, f64::min);
+			if min_rate.is_finite() {
+				let delta = temp as f64 - kitchen.ambient_temperature_celsius;
+				let duration = (min_rate * delta).round() as u32;
+				let preheat_id = format!("{}.preheat", task.id);
+				preheat_insertions.push((i, preheat_id, duration, kind.clone(), temp));
 			}
 		}
 	}
@@ -471,8 +481,8 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
 
 	let model_path =
 		std::env::temp_dir().join(format!("kitchen_planner_{}.mzn", std::process::id()));
-	let mut tmp = fs::File::create(&model_path).expect("failed to create temp file");
-	write!(tmp, "{}", model).expect("failed to write model");
+	let mut tmp = fs::File::create(&model_path)?;
+	write!(tmp, "{}", model)?;
 	drop(tmp);
 
 	let output = Command::new("minizinc")
@@ -484,18 +494,20 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
 		.arg(&model_path)
 		.stdout(Stdio::piped())
 		.stderr(Stdio::piped())
-		.output()
-		.expect("failed to execute minizinc");
+		.output()?;
 
 	let stderr = String::from_utf8_lossy(&output.stderr);
 	let stdout = String::from_utf8_lossy(&output.stdout);
 
 	if !output.status.success() {
-		eprintln!("minizinc error (exit code: {:?}):", output.status.code());
-		eprintln!("stderr: {}", stderr);
-		eprintln!("stdout: {}", stdout);
-		eprintln!("model file: {}", model_path.display());
-		std::process::exit(1);
+		let mut msg = format!(
+			"minizinc exited with code {:?}",
+			output.status.code(),
+		);
+		if !stderr.is_empty() {
+			msg.push_str(&format!("\nstderr: {}", stderr));
+		}
+		return Err(ScheduleError::SolverFailure(msg));
 	}
 
 	let _ = fs::remove_file(&model_path);
@@ -571,8 +583,8 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
 		}
 	}
 
-	let (start_vals, cook_vals, assign_vals) =
-		last_solution.expect("no solution found from minizinc");
+	let (start_vals, cook_vals, assign_vals) = last_solution
+		.ok_or(ScheduleError::NoSolution)?;
 
 	let plan_tasks: Vec<Task> = tasks
 		.iter()
@@ -617,7 +629,7 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
 		})
 		.collect();
 
-	Plan { tasks: plan_tasks }
+	Ok(Plan { tasks: plan_tasks })
 }
 
 struct EquipInfo {

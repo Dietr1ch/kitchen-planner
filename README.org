@@ -243,9 +243,7 @@ kitchen-planner/
 - Error handling — binaries under ~src/bin/~ return ~color_eyre::Result<()>~ and
   propagate with ~?~ and ~.wrap_err("…")~; library code uses plain ~Result~
   with ~thiserror~-derived error types for new domain-specific errors.
-  Never use ~process::exit~ or ~unwrap~ for recoverable errors in binaries
-  (the lone ~process::exit(1)~ in ~src/schedule.rs~ is acceptable as a fatal
-  solver-failure last resort where no Plan can be produced).
+  Never use ~process::exit~ or ~unwrap~ for recoverable errors in binaries.
 - No library dependencies beyond ~serde~, ~serde_json~, ~ron~, ~clap~,
   ~strum~, ~thiserror~, ~googletest~
 - Nix/Flakes for reproducible builds; ~shell.nix~ provides ~minizinc~ + ~gecode~
