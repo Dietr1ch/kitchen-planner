@@ -1,0 +1,19 @@
+(
+  name: "Mashed Potatoes",
+  ingredients: [
+    (name: "Potatoes", quantity: 1000.0, unit: "g", optional: false, alternatives: []),
+    (name: "Butter", quantity: 50.0, unit: "g", optional: false, alternatives: []),
+    (name: "Milk", quantity: 100.0, unit: "ml", optional: false, alternatives: ["Cream", "Buttermilk"]),
+    (name: "Salt", quantity: 5.0, unit: "g", optional: false, alternatives: []),
+    (name: "Garlic", quantity: 2.0, unit: "piece", optional: true, alternatives: ["Garlic Powder"]),
+  ],
+  steps: [
+    (id: "s1", description: "Peel and chop potatoes", duration_minutes: 10, resource_kind: Some("prep_surface"), dependencies: [], optional: false,
+      skill: Some("knife_work"), min_skill_level: Some(Novice),
+      duration_by_skill: Some({ Unskilled: 15, Novice: 10, Intermediate: 8, Advanced: 7, Expert: 6 })),
+    (id: "s2", description: "Boil potatoes in salted water", duration_minutes: 25, resource_kind: Some("burner"), dependencies: ["s1"], optional: false),
+    (id: "s3", description: "Drain potatoes", duration_minutes: 2, resource_kind: Some("prep_surface"), dependencies: ["s2"], optional: false),
+    (id: "s4", description: "Mash with butter and milk", duration_minutes: 5, resource_kind: Some("prep_surface"), dependencies: ["s3"], optional: false),
+    (id: "s5", description: "Season to taste", duration_minutes: 2, resource_kind: Some("prep_surface"), dependencies: ["s4"], optional: true),
+  ],
+)
