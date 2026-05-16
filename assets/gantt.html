@@ -59,6 +59,7 @@ tr:hover { background: #fafafa; }
   background: #4caf50; height: 26px; border-radius: 4px;
   box-sizing: border-box; cursor: pointer; transition: background 0.15s;
 }
+.bar-last { border-right: 3px solid #2e7d32; }
 
 tr.dep-upstream { background: #fff3e0 !important; }
 tr.dep-upstream .bar { background: #ff9800 !important; }
@@ -94,7 +95,6 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
         <th data-sort="start">Duration ↕</th>
         <th>Dish</th>
         <th>Task</th>
-        <th>Dependencies</th>
         <th data-sort="cook">Cook ↕</th>
         <th>Resource</th>
       </tr>
@@ -131,13 +131,6 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  function shortDeps(deps) {
-    return deps.map(function (d) {
-      var parts = d.split(':');
-      return parts[parts.length - 1];
-    }).join(', ');
-  }
-
   var loadedPlan = null;
 
   function sortAndRender(sortOrder) {
@@ -162,6 +155,14 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
     }, 0) || 1;
     var totalF = totalDuration;
 
+    // Find the latest finishing task per dish
+    var dishEnd = {};
+    for (var i = 0; i < tasks.length; i++) {
+      var t = tasks[i];
+      var end = t.start_offset_minutes + t.duration_minutes;
+      if (!(t.dish in dishEnd) || end > dishEnd[t.dish]) dishEnd[t.dish] = end;
+    }
+
     var rows = '';
     for (var i = 0; i < tasks.length; i++) {
       var t = tasks[i];
@@ -174,7 +175,6 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
       var depIds = (t.dependencies || []).map(escapeHtml).join(', ');
       var dish = escapeHtml(t.dish || '');
       var desc = escapeHtml(t.description);
-      var deps = shortDeps(t.dependencies || []);
       var cook = t.cook || '(none)';
       var escapedCook = escapeHtml(cook);
       var resourceKind = t.resource_kind || null;
@@ -188,11 +188,11 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
         ? '<span class="cook-badge" style="background:' + cookColorVal + ';">' + escapedCook + '</span>'
         : escapedCook;
 
+      var barClass = 'bar' + (end >= dishEnd[t.dish] ? ' bar-last' : '');
       rows += '<tr data-task-id="' + taskId + '" data-depends-on="' + depIds + '">'
-        + '<td><div class="bar-container"><div class="bar" style="margin-left:' + offsetPct + '%;width:' + widthPct + '%;" title="' + barLabel + '"></div></div></td>'
+        + '<td><div class="bar-container"><div class="' + barClass + '" style="margin-left:' + offsetPct + '%;width:' + widthPct + '%;" title="' + barLabel + '"></div></div></td>'
         + '<td>' + dish + '</td>'
         + '<td>' + desc + '</td>'
-        + '<td>' + deps + '</td>'
         + '<td>' + cookCell + '</td>'
         + '<td>' + resource + '</td>'
         + '</tr>\n';
