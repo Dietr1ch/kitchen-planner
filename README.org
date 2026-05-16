@@ -314,19 +314,40 @@ MiniZinc-based solver produces optimized schedules with:
 Two renderers (text terminal, client-side web app).
 
 Sample schedule (Lasagna + Garlic Bread, 4 cooks, ~data/~):
-| Task                                     | Time   | Cook   | Resource |
-|------------------------------------------+--------+--------+----------|
-| Lasagna: Dice onion and garlic           |  0–10  | Bob    | prep-1   |
-| Lasagna: Brown ground beef               |  0–10  | Alice  | st-1     |
-| Lasagna: Sauté onion and garlic          | 10–15  | Alice  | st-2     |
-| Lasagna: Simmer tomato sauce             | 15–35  | Alice  | st-2     |
-| Lasagna: Layer lasagna                   | 35–50  | Alice  | prep-1   |
-| Garlic Bread: Mince garlic               | 50–55  | Alice  | prep-2   |
-| Lasagna: Bake lasagna                    | 50–90  | (none) | ov-1     |
-| Garlic Bread: Mix butter with garlic     | 55–58  | Alice  | prep-2   |
-| Garlic Bread: Slice baguette and spread  | 58–63  | Alice  | prep-2   |
-| Garlic Bread: Bake in oven               | 90–100 | (none) | ov-1     |
-| Lasagna: Rest before serving             | 90–100 | (none) | (none)   |
+
+#+begin_src fish :results raw
+  just run \
+    --kitchen data/kitchens/simple.ron \
+    --cook data/cooks/alice.ron \
+    --cook data/cooks/bob.ron \
+    --cook data/cooks/charlie.ron \
+    --cook data/cooks/diana.ron \
+    data/recipes/*.ron
+#+end_src
+
+#+RESULTS:
+Kitchen Planner - Gantt Chart
+
+Duration                                 │ Dish         │ Task                                   │ Deps           │ Cook       │ Resource
+──────────────────────────────────────── ┼ ──────────── ┼ ────────────────────────────────────── ┼ ────────────── ┼ ────────── ┼ ──────────
+  0–7   ▓▓▓                              │ Lasagna      │ Dice onion and garlic                  │                │ Diana      │ prep_surface (Island Counter)
+  0–10  ▓▓▓▓                             │ Lasagna      │ Brown ground beef                      │                │ Bob        │ burner (Back Right Burner)
+  0–7   ▓▓▓                              │ Mashed Potat… │ Peel and chop potatoes                 │                │ Alice      │ prep_surface (Main Counter)
+     7–12  ▓▓                            │ Lasagna      │ Sauté onion and garlic                 │ s1             │ Alice      │ burner (Back Left Burner)
+     7–32  ▓▓▓▓▓▓▓▓▓▓                    │ Mashed Potat… │ Boil potatoes in salted water          │ s1             │ Charlie    │ burner (Front Left Burner)
+      12–32  ▓▓▓▓▓▓▓▓                    │ Lasagna      │ Simmer tomato sauce with beef and o…   │ s2, s3         │ Alice      │ burner (Back Left Burner)
+      13–31  ▓▓▓▓▓▓▓                     │ Garlic Bread │ Pre-heat oven to 200°C                 │                │ (none)     │ oven (Main Oven)
+              31–47  ▓▓▓▓▓▓▓             │ Lasagna      │ Pre-heat oven to 180°C                 │                │ (none)     │ oven (Main Oven)
+              32–47  ▓▓▓▓▓▓              │ Lasagna      │ Layer lasagna in baking dish           │ s4             │ Alice      │ prep_surface (Main Counter)
+                    47–51  ▓▓            │ Garlic Bread │ Mince garlic and chop parsley          │                │ Alice      │ prep_surface (Main Counter)
+                    47–87  ▓▓▓▓▓▓▓▓▓▓▓   │ Lasagna      │ Bake lasagna                           │ s5, s6.preheat │ (none)     │ oven (Main Oven)
+                      51–54  ▓           │ Garlic Bread │ Mix butter with garlic and parsley     │ s1             │ Alice      │ prep_surface (Main Counter)
+                       54–56  ▓          │ Mashed Potat… │ Drain potatoes                         │ s2             │ Alice      │ sink (Kitchen Sink)
+                        56–61  ▓▓        │ Mashed Potat… │ Mash with butter and milk              │ s3             │ Alice      │ prep_surface (Main Counter)
+                          61–66  ▓▓      │ Garlic Bread │ Slice baguette and spread garlic bu…   │ s2             │ Alice      │ prep_surface (Main Counter)
+                              87–97  ▓   │ Garlic Bread │ Bake in oven                           │ s3, s4.preheat │ (none)     │ oven (Main Oven)
+                              87–97  ▓   │ Lasagna      │ Rest before serving                    │ s6             │ (none)     │ (none)
+                              95–97  ▓   │ Mashed Potat… │ Season to taste                        │ s4             │ Alice      │ prep_surface (Main Counter)
 
 ** Future Work
 
