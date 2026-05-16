@@ -64,23 +64,14 @@ fn build_model(
 	}
 	m.push_str("];\n");
 
-	m.push_str("array[1..num_kinds] of int: kind_start = [");
-	for i in 1..kind_start.len() {
-		if i > 1 {
-			m.push_str(", ");
-		}
-		m.push_str(&kind_start[i].to_string());
-	}
-	m.push_str("];\n");
-
-	m.push_str("array[1..num_kinds] of int: kind_end = [");
-	for i in 1..kind_end.len() {
-		if i > 1 {
-			m.push_str(", ");
-		}
-		m.push_str(&kind_end[i].to_string());
-	}
-	m.push_str("];\n");
+	m.push_str(&format!(
+		"array[1..num_kinds] of int: kind_start = [{}];\n",
+		kind_start.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", ")
+	));
+	m.push_str(&format!(
+		"array[1..num_kinds] of int: kind_end = [{}];\n",
+		kind_end.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", ")
+	));
 
 	m.push_str("array[1..num_tasks] of bool: needs_cook = [");
 	for (i, n) in needs_cook_arr.iter().enumerate() {
