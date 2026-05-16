@@ -22,8 +22,7 @@ Two CLI tools, piped together:
   cargo run \
   	--bin schedule \
   	-- \
-  	schedule \
-  	<kitchen.ron> \
+  	--kitchen <kitchen.ron> \
   	--cook <cook..> \
   	<recipes...>
 
@@ -41,8 +40,7 @@ Example:
   cargo run \
   	--bin schedule \
   	-- \
-  	schedule \
-  	data/kitchens/simple.ron \
+  	--kitchen data/kitchens/simple.ron \
   	--cook data/cooks/alice.ron \
   	data/recipes/lasagna.ron \
   	| cargo run \
@@ -247,7 +245,7 @@ kitchen-planner/
 
 ** Architecture Decisions
 
-- [[https://github.com/anomalyco/opencode][opencode]]-driven development — the project was built entirely via AI-assisted pair programming
+- [[https://github.com/anomalyco/opencode][opencode]]-driven development — the project was built almost entirely via AI-assisted pair programming
 - Replaced an initial ad-hoc sequential heuristic with MiniZinc constraint programming
   (the CP solver produces tighter schedules by exploring interleavings a greedy
   heuristic misses; e.g., 100 min vs 110 min makespan for 4 cooks + both recipes)

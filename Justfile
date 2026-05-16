@@ -17,12 +17,12 @@ lint:
 
 build:
 	nix build
+
 plan:
 	@cargo run \
 	  --quiet \
 	  --bin schedule \
 	  -- \
-	  schedule \
 	  data/kitchens/simple.ron \
 	  --cook data/cooks/alice.ron \
 	  --cook data/cooks/bob.ron \
@@ -41,7 +41,6 @@ run-html path:
 	  --quiet \
 	  --bin schedule \
 	  -- \
-	  schedule \
 	  data/kitchens/simple.ron \
 	  --cook data/cooks/alice.ron \
 	  --cook data/cooks/bob.ron \

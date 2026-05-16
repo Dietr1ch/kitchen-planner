@@ -1,43 +1,33 @@
-use std::fs;
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
-use std::process;
+use std::io::Write;
+use std::path::PathBuf;
 
 use clap::Parser;
+
+use kitchen_planner::io;
 use kitchen_planner::models::plan::Plan;
 use kitchen_planner::render::{Renderer, SortOrder, TextRenderer};
 
 #[derive(Parser)]
 #[command(name = "gantt")]
 struct Cli {
-	path: PathBuf,
 	#[arg(short, long, value_enum, default_value_t = SortOrder::Start)]
 	sort_by: SortOrder,
+
+	plan_path: PathBuf,
 }
 
-fn main() {
-	let cli = Cli::parse();
+fn main() -> color_eyre::Result<()> {
+	use color_eyre::eyre::WrapErr;
+	let args = Cli::parse();
 
-	let resolved = if cli.path == Path::new("-") {
-		Path::new("/dev/stdin")
-	} else {
-		&cli.path
-	};
+	let plan: Plan = io::read_json_file(&args.plan_path).wrap_err("Failed to read Plan file")?;
 
-	let content = fs::read_to_string(resolved).unwrap_or_else(|e| {
-		eprintln!("Error reading {}: {}", cli.path.display(), e);
-		process::exit(1);
-	});
-
-	let plan: Plan = serde_json::from_str(&content).unwrap_or_else(|e| {
-		eprintln!("Invalid plan: {}", e);
-		process::exit(1);
-	});
-
-	let renderer = TextRenderer::new(cli.sort_by);
+	let renderer = TextRenderer::new(args.sort_by);
 	let output = renderer.render(&plan);
-	let stdout = io::stdout();
+	let stdout = std::io::stdout();
 	let mut handle = stdout.lock();
 	let _ = write!(handle, "{}", output);
 	let _ = handle.flush();
+
+	Ok(())
 }
