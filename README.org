@@ -240,7 +240,14 @@ kitchen-planner/
 - ~clap~ with ~derive~ for CLI argument parsing (self-documenting)
 - All file path arguments accept ~-~ as alias for stdin (resolved to ~/dev/stdin~)
 - Output uses ~write!~ + ~flush~ instead of ~print!~ to avoid SIGPIPE panics
-- No library dependencies beyond ~serde~, ~serde_json~, ~ron~, ~clap~, ~strum~
+- Error handling — binaries under ~src/bin/~ return ~color_eyre::Result<()>~ and
+  propagate with ~?~ and ~.wrap_err("…")~; library code uses plain ~Result~
+  with ~thiserror~-derived error types for new domain-specific errors.
+  Never use ~process::exit~ or ~unwrap~ for recoverable errors in binaries
+  (the lone ~process::exit(1)~ in ~src/schedule.rs~ is acceptable as a fatal
+  solver-failure last resort where no Plan can be produced).
+- No library dependencies beyond ~serde~, ~serde_json~, ~ron~, ~clap~,
+  ~strum~, ~thiserror~, ~googletest~
 - Nix/Flakes for reproducible builds; ~shell.nix~ provides ~minizinc~ + ~gecode~
 
 ** Architecture Decisions
@@ -257,6 +264,11 @@ kitchen-planner/
   physically accurate (set-and-forget), enables natural interleaving (e.g., GB prep
   during LS bake)
 - Cooks are passed via ~--cook~ flags (~data/cooks/~)
+- Error boundary: ~color-eyre~ is intentionally restricted to ~src/bin/~
+  entrypoints so library functions (~src/io.rs~, ~src/schedule.rs~, etc.)
+  stay framework-agnostic and return typed ~Result~ types. This keeps the
+  library testable without ~color-eyre~ and prevents ~process::exit~ from
+  leaking into reusable code.
 
 ** Data Conventions
 
