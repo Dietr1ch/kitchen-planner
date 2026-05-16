@@ -1,0 +1,29 @@
+(
+  equipment: [
+    (id: "st-1", name: "Front Left Burner", kind: "burner"),
+    (id: "st-2", name: "Back Left Burner", kind: "burner"),
+    (id: "st-3", name: "Back Right Burner", kind: "burner"),
+    (id: "st-4", name: "Front Right Burner", kind: "burner"),
+    (id: "st-5", name: "Center Left Burner", kind: "burner"),
+    (id: "st-6", name: "Center Right Burner", kind: "burner"),
+    (id: "ov-1", name: "Main Oven", kind: "oven"),
+    (id: "ov-2", name: "Second Oven", kind: "oven"),
+    (id: "pot-1", name: "Large Stockpot", kind: "pot"),
+    (id: "pot-2", name: "Medium Saucepan", kind: "pot"),
+    (id: "pot-3", name: "Frying Pan", kind: "pot"),
+    (id: "prep-1", name: "Main Counter", kind: "prep_surface"),
+    (id: "prep-2", name: "Island Counter", kind: "prep_surface"),
+    (id: "prep-3", name: "Butcher Block", kind: "prep_surface"),
+  ],
+  food: [
+    (id: "fl-1", name: "Flour", quantity: 2000.0, unit: "g"),
+    (id: "oil-1", name: "Olive Oil", quantity: 500.0, unit: "ml"),
+    (id: "salt-1", name: "Salt", quantity: 500.0, unit: "g"),
+    (id: "eg-1", name: "Eggs", quantity: 12.0, unit: "piece"),
+    (id: "but-1", name: "Butter", quantity: 250.0, unit: "g"),
+  ],
+  materials: [
+    (id: "wr-1", name: "Plastic Wrap", quantity: 1.0, unit: "roll"),
+    (id: "bp-1", name: "Baking Paper", quantity: 1.0, unit: "roll"),
+  ],
+)
