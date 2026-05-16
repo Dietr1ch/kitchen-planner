@@ -55,6 +55,3 @@ pub(crate) fn short_deps(deps: &[String]) -> String {
 
 mod text;
 pub use text::TextRenderer;
-
-mod html;
-pub use html::HtmlRenderer;

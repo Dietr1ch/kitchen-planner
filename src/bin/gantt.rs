@@ -3,24 +3,16 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process;
 
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use kitchen_planner::models::plan::Plan;
-use kitchen_planner::render::{HtmlRenderer, Renderer, SortOrder, TextRenderer};
+use kitchen_planner::render::{Renderer, SortOrder, TextRenderer};
 
 #[derive(Parser)]
 #[command(name = "gantt")]
 struct Cli {
 	path: PathBuf,
-	#[arg(short, long, value_enum, default_value_t = Format::Text)]
-	format: Format,
 	#[arg(short, long, value_enum, default_value_t = SortOrder::Start)]
 	sort_by: SortOrder,
-}
-
-#[derive(Copy, Clone, ValueEnum)]
-enum Format {
-	Text,
-	Html,
 }
 
 fn main() {
@@ -42,11 +34,7 @@ fn main() {
 		process::exit(1);
 	});
 
-	let renderer: Box<dyn Renderer> = match cli.format {
-		Format::Text => Box::new(TextRenderer::new(cli.sort_by)),
-		Format::Html => Box::new(HtmlRenderer),
-	};
-
+	let renderer = TextRenderer::new(cli.sort_by);
 	let output = renderer.render(&plan);
 	let stdout = io::stdout();
 	let mut handle = stdout.lock();
