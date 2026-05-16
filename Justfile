@@ -5,6 +5,13 @@ check:
 fmt:
 	cargo fmt
 
+lint:
+	cargo clippy \
+	  --all-features \
+	  --all-targets \
+	  --fix \
+	  --allow-dirty
+
 build:
 	nix build
 plan:
