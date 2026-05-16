@@ -1,8 +1,12 @@
-check:
+check: export_ts_types
 	ron-lsp check
+	tsc --noEmit
 	cargo check \
 	  --all-targets
 	nix flake check
+
+export_ts_types:
+	cargo test export_bindings
 
 fmt:
 	cargo fmt

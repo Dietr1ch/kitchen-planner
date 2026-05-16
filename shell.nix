@@ -18,6 +18,11 @@ pkgs.mkShell {
 
     # RON
     ron-lsp
+
+    # JS
+    nodejs
+    typescript
+    typescript-language-server
   ];
 
   # Environment

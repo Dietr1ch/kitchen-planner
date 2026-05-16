@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use strum::{EnumIter, IntoEnumIterator};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
 pub struct Cook {
 	pub name: String,
 	#[serde(default)]
@@ -11,9 +12,21 @@ pub struct Cook {
 }
 
 #[derive(
-	Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter, Serialize, Deserialize,
+	Debug,
+	Clone,
+	Copy,
+	PartialEq,
+	Eq,
+	Hash,
+	PartialOrd,
+	Ord,
+	EnumIter,
+	Serialize,
+	Deserialize,
+	ts_rs::TS,
 )]
 #[repr(u8)]
+#[ts(export)]
 pub enum SkillLevel {
 	Unskilled = 0,
 	Novice,

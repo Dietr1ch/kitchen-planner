@@ -4,14 +4,16 @@ use serde::{Deserialize, Serialize};
 
 use super::cook::SkillLevel;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
 pub struct Recipe {
 	pub name: String,
 	pub ingredients: Vec<Ingredient>,
 	pub steps: Vec<Step>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
 pub struct Ingredient {
 	pub name: String,
 	pub quantity: f64,
@@ -22,7 +24,8 @@ pub struct Ingredient {
 	pub alternatives: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
 pub struct Step {
 	pub id: String,
 	pub description: String,

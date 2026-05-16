@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
 pub struct Kitchen {
 	pub equipment: Vec<Equipment>,
 	#[serde(default = "default_ambient")]
@@ -9,7 +10,8 @@ pub struct Kitchen {
 	pub materials: Vec<Material>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
 pub struct Equipment {
 	pub id: String,
 	pub name: String,
@@ -22,7 +24,8 @@ fn default_ambient() -> f64 {
 	20.0
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
 pub struct Food {
 	pub id: String,
 	pub name: String,
@@ -30,7 +33,8 @@ pub struct Food {
 	pub unit: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
 pub struct Material {
 	pub id: String,
 	pub name: String,

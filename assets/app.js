@@ -1,6 +1,33 @@
+// @ts-check
+
+/**
+ * @import { Cook } from "../bindings/Cook"
+ * @import { Equipment } from "../bindings/Equipment"
+ * @import { Food } from "../bindings/Food"
+ * @import { Ingredient } from "../bindings/Ingredient"
+ * @import { Kitchen } from "../bindings/Kitchen"
+ * @import { Material } from "../bindings/Material"
+ * @import { Plan } from "../bindings/Plan"
+ * @import { Recipe } from "../bindings/Recipe"
+ * @import { SkillLevel } from "../bindings/SkillLevel"
+ * @import { Step } from "../bindings/Step"
+ * @import { Task } from "../bindings/Task"
+ */
+
 (function () {
   'use strict';
 
+
+  /**
+   * @typedef {Object} State
+   * @property {Object | null} defaults
+   * @property {Object} selectedEquipment
+   * @property {Object} selectedCooks
+   * @property {Object} selectedRecipes
+   * @property {Recipe[]} uploadedRecipes
+   */
+
+  /** @type {State} */
   var state = {
     defaults: null,
     selectedEquipment: {},
@@ -10,6 +37,15 @@
   };
 
   // View switching
+  /**
+   * @typedef {Object} Views
+   * @property {Element | null} config
+   * @property {Element | null} loading
+   * @property {Element | null} gantt
+   * @property {Element | null} error
+   */
+
+  /** @type {Views} */
   var views = {
     config: document.getElementById('configView'),
     loading: document.getElementById('loadingView'),
@@ -47,8 +83,10 @@
     updateGenerateButton();
   }
 
-  // ── Kitchen ──────────────────────────────────────────
-
+  /**
+   * Builds the kitchen UI
+   * @param {Kitchen} kitchen
+   */
   function buildKitchenUI(kitchen) {
     var container = document.getElementById('kitchenContent');
     container.innerHTML = '';
@@ -78,8 +116,10 @@
     container.appendChild(grid);
   }
 
-  // ── Cooks ────────────────────────────────────────────
-
+  /**
+   * Builds the Cooks UI
+   * @param {Cook[]} cooks
+   */
   function buildCooksUI(cooks) {
     var container = document.getElementById('cooksContent');
     container.innerHTML = '';
@@ -112,8 +152,10 @@
     container.appendChild(list);
   }
 
-  // ── Recipes ──────────────────────────────────────────
-
+  /**
+   * Builds the Recipes UI
+   * @param {Recipes[]} recipes
+   */
   function buildRecipesUI(recipes) {
     var container = document.getElementById('recipesContent');
     container.innerHTML = '';
@@ -183,8 +225,6 @@
     container.appendChild(list);
   }
 
-  // ── Generate ─────────────────────────────────────────
-
   function updateGenerateButton() {
     var btn = document.getElementById('btnGenerate');
     var hasCook = Object.values(state.selectedCooks).some(function (v) { return v; });
@@ -194,8 +234,15 @@
 
   document.getElementById('btnGenerate').addEventListener('click', generatePlan);
 
+  /**
+   * Returns the sum of a and b
+   * @returns {Promise<Plan>} Promise of a Plan
+   */
   function generatePlan() {
     // Build kitchen with only selected equipment
+    /**
+     * @type {Kitchen}
+     */
     var kitchen = JSON.parse(JSON.stringify(state.defaults.kitchen));
     kitchen.equipment = kitchen.equipment.filter(function (eq) {
       return state.selectedEquipment[eq.id];
@@ -203,11 +250,21 @@
 
     // Build cooks list
     var allCooks = state.defaults.cooks;
-    var cooks = allCooks.filter(function (c) { return state.selectedCooks[c.name]; });
+    /**
+     * @type {Cook[]}
+     */
+    var cooks = allCooks.filter(function (c) {
+      return state.selectedCooks[c.name];
+    });
 
     // Build recipes list (defaults + uploaded)
     var allRecipes = state.defaults.recipes.concat(state.uploadedRecipes);
-    var recipes = allRecipes.filter(function (r) { return state.selectedRecipes[r.name]; });
+    /**
+     * @type {Recipe[]}
+     */
+    var recipes = allRecipes.filter(function (r) {
+      return state.selectedRecipes[r.name];
+    });
 
     var payload = { kitchen: kitchen, cooks: cooks, recipes: recipes };
 
@@ -241,7 +298,17 @@
     showView('config');
   });
 
+  /**
+   * Escapes HTML special characters in a given string.
+   * @param {String} s
+   * @returns {String} Escaped string
+   */
   function escapeHtml(s) {
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
   }
 })();
