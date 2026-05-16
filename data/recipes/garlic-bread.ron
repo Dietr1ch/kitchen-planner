@@ -1,0 +1,15 @@
+(
+  name: "Garlic Bread",
+  ingredients: [
+    (name: "Baguette", quantity: 1.0, unit: "piece", optional: false, alternatives: ["Ciabatta"]),
+    (name: "Butter", quantity: 50.0, unit: "g", optional: false, alternatives: []),
+    (name: "Garlic", quantity: 3.0, unit: "piece", optional: false, alternatives: ["Garlic Powder"]),
+    (name: "Parsley", quantity: 10.0, unit: "g", optional: true, alternatives: []),
+  ],
+  steps: [
+    (id: "s1", description: "Mince garlic and chop parsley", duration_minutes: 5, resource_id: Some("prep-2"), dependencies: [], optional: false),
+    (id: "s2", description: "Mix butter with garlic and parsley", duration_minutes: 3, resource_id: Some("prep-2"), dependencies: ["s1"], optional: false),
+    (id: "s3", description: "Slice baguette and spread garlic butter", duration_minutes: 5, resource_id: Some("prep-2"), dependencies: ["s2"], optional: false),
+    (id: "s4", description: "Bake in oven", duration_minutes: 10, resource_id: Some("ov-1"), dependencies: ["s3"], optional: false),
+  ],
+)

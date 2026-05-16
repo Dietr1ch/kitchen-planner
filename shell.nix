@@ -15,6 +15,9 @@ pkgs.mkShell {
     # Solver
     minizinc
     gecode
+
+    # RON
+    ron-lsp
   ];
 
   # Environment

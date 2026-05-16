@@ -49,7 +49,7 @@ fn schedule(kitchen_path: PathBuf, cooks_dir: PathBuf, recipe_paths: Vec<PathBuf
         })
         .filter_map(|entry| {
             let path = entry.ok()?.path();
-            (path.extension() == Some("json".as_ref())).then_some(path)
+            (path.extension() == Some("ron".as_ref())).then_some(path)
         })
         .collect();
     cook_files.sort();
@@ -70,7 +70,7 @@ fn read_file<T: serde::de::DeserializeOwned>(schema: &str, path: &Path) -> T {
         eprintln!("Error reading {}: {}", path.display(), e);
         process::exit(1);
     });
-    serde_json::from_str(&content).unwrap_or_else(|e| {
+    ron::from_str(&content).unwrap_or_else(|e| {
         eprintln!("Invalid {} schema in {}: {}", schema, path.display(), e);
         process::exit(1);
     })

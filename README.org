@@ -19,7 +19,7 @@ Two CLI tools, piped together:
 
 #+begin_src sh
   # Solve: kitchen + cooks + recipes → Plan JSON (stdout)
-  cargo run --bin schedule -- schedule <kitchen.json> <cooks-dir/> <recipes...>
+  cargo run --bin schedule -- schedule <kitchen.ron> <cooks-dir/> <recipes...>
 
   # Render: Plan JSON → Gantt chart (text/html)
   cargo run --bin gantt -- [--format text|html] <plan.json>
@@ -28,7 +28,7 @@ Two CLI tools, piped together:
 Example:
 
 #+begin_src sh
-  cargo run --bin schedule -- schedule data/kitchen.json data/cooks data/recipes/*.json \
+  cargo run --bin schedule -- schedule data/kitchen.ron data/cooks data/recipes/*.ron \
     | cargo run --bin gantt -- -
 #+end_src
 
@@ -55,14 +55,14 @@ Example:
 ** Data Flow
 
 #+begin_src
-kitchen.json ─┐
-cooks/*.json ─┤ schedule ─→ plan.json ─→ gantt (text)
-recipes/*.json┘                            └→ gantt (HTML)
+kitchen.ron ──┐
+cooks/*.ron ──┤ schedule ─→ plan.json ─→ gantt (text)
+recipes/*.ron ┘                            └→ gantt (HTML)
 #+end_src
 
 * Data Model
 
-** Kitchen (~data/kitchen.json~)
+** Kitchen (~data/kitchen.ron~)
 
 - =Equipment= — =id=, =name=, =kind= (=burner=, =oven=, =pot=, =prep_surface=)
 - =Food= — =id=, =name=, =quantity=, =unit=
@@ -71,7 +71,7 @@ recipes/*.json┘                            └→ gantt (HTML)
 Equipment =kind= determines whether a task occupies the cook (=oven= tasks
 do not, everything else does).
 
-** Recipe (~data/recipes/*.json~)
+** Recipe (~data/recipes/*.ron~)
 
 - =name=, =ingredients=, =steps=
 - Each =Step=: =id=, =description=, =duration_minutes=, =resource_id=,
@@ -81,7 +81,7 @@ Resource references equipment by =id= from the kitchen (=null= means no
 equipment needed). Dependencies are resolved by prepending
 =recipe_name:= to each step ID (e.g., =s1= → =Lasagna:s1=).
 
-** Cook (~data/cooks/*.json~)
+** Cook (~data/cooks/*.ron~)
 
 One JSON file per cook. =name=, =knife_skill= (=Novice=, =Intermediate=,
 =Advanced=, =Expert=). =knife_skill= is defined in the schema but not yet
@@ -180,15 +180,15 @@ kitchen-planner/
 ├── .config/
 │   └── server.toml         # static-web-server config
 ├── data/
-│   ├── kitchen.json        # Equipment, food, materials
-│   ├── cooks/              # One JSON per cook
-│   │   ├── alice.json
-│   │   ├── bob.json
-│   │   ├── charlie.json
-│   │   └── diana.json
+│   ├── kitchen.ron         # Equipment, food, materials
+│   ├── cooks/              # One RON file per cook
+│   │   ├── alice.ron
+│   │   ├── bob.ron
+│   │   ├── charlie.ron
+│   │   └── diana.ron
 │   └── recipes/
-│       ├── lasagna.json
-│       └── garlic-bread.json
+│       ├── lasagna.ron
+│       └── garlic-bread.ron
 └── src/
     ├── lib.rs              # Module declarations
     ├── bin/
@@ -214,7 +214,7 @@ kitchen-planner/
 - ~clap~ with ~derive~ for CLI argument parsing (self-documenting)
 - All file path arguments accept ~-~ as alias for stdin (resolved to ~/dev/stdin~)
 - Output uses ~write!~ + ~flush~ instead of ~print!~ to avoid SIGPIPE panics
-- No library dependencies beyond ~serde~, ~serde_json~, ~clap~
+- No library dependencies beyond ~serde~, ~serde_json~, ~ron~, ~clap~
 - Nix/Flakes for reproducible builds; ~shell.nix~ provides ~minizinc~ + ~gecode~
 
 ** Architecture Decisions
