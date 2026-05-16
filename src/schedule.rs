@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 use crate::cook::Cook;
 use crate::kitchen::Kitchen;
@@ -17,201 +20,297 @@ fn needs_cook(resource_id: &Option<String>, kitchen: &Kitchen) -> bool {
     }
 }
 
-fn standalone_recipe_duration(_kitchen: &Kitchen, recipe: &Recipe) -> u32 {
-    let mut resource_available: HashMap<String, u32> = recipe
-        .steps
-        .iter()
-        .filter_map(|s| s.resource_id.as_ref())
-        .map(|rid| (rid.clone(), 0))
-        .collect();
+fn build_model(
+    durations: &[u32],
+    resources: &[usize],
+    needs_cook_arr: &[bool],
+    recipe_of: &[usize],
+    deps_from: &[usize],
+    deps_to: &[usize],
+    num_cooks: usize,
+    num_recipes: usize,
+    horizon: u32,
+) -> String {
+    let num_tasks = durations.len();
+    let num_deps = deps_from.len();
+    let num_resources = resources.iter().filter(|&&r| r > 0).max().copied().unwrap_or(0);
 
-    let mut step_finish: HashMap<String, u32> = HashMap::new();
+    let mut m = String::new();
+    m.push_str(&format!("int: num_tasks = {};\n", num_tasks));
+    m.push_str(&format!("int: horizon = {};\n", horizon));
+    m.push_str(&format!("int: num_resources = {};\n", num_resources));
+    m.push_str(&format!("int: num_cooks = {};\n", num_cooks));
+    m.push_str(&format!("int: num_recipes = {};\n", num_recipes));
+    m.push_str(&format!("int: num_deps = {};\n", num_deps));
 
-    for step in topological_sort(&recipe.steps) {
-        let dep_finish = step
-            .dependencies
-            .iter()
-            .filter_map(|d| step_finish.get(d))
-            .max()
-            .copied()
-            .unwrap_or(0);
-
-        let resource_ready = step
-            .resource_id
-            .as_ref()
-            .and_then(|rid| resource_available.get(rid).copied())
-            .unwrap_or(0);
-
-        let start = dep_finish.max(resource_ready);
-        let finish = start + step.duration_minutes;
-
-        if let Some(rid) = &step.resource_id {
-            resource_available.insert(rid.clone(), finish);
-        }
-
-        step_finish.insert(step.id.clone(), finish);
+    m.push_str("array[1..num_tasks] of int: duration = [");
+    for (i, d) in durations.iter().enumerate() {
+        if i > 0 { m.push_str(", "); }
+        m.push_str(&d.to_string());
     }
+    m.push_str("];\n");
 
-    step_finish.values().max().copied().unwrap_or(0)
-}
+    m.push_str("array[1..num_tasks] of int: resource = [");
+    for (i, r) in resources.iter().enumerate() {
+        if i > 0 { m.push_str(", "); }
+        m.push_str(&r.to_string());
+    }
+    m.push_str("];\n");
 
-fn pick_cook(cook_available: &HashMap<String, u32>) -> Option<String> {
-    cook_available
-        .iter()
-        .min_by_key(|&(_, time)| *time)
-        .map(|(name, _)| name.clone())
+    m.push_str("array[1..num_tasks] of bool: needs_cook = [");
+    for (i, n) in needs_cook_arr.iter().enumerate() {
+        if i > 0 { m.push_str(", "); }
+        m.push_str(if *n { "true" } else { "false" });
+    }
+    m.push_str("];\n");
+
+    m.push_str("array[1..num_tasks] of int: recipe_of = [");
+    for (i, r) in recipe_of.iter().enumerate() {
+        if i > 0 { m.push_str(", "); }
+        m.push_str(&(r + 1).to_string());
+    }
+    m.push_str("];\n");
+
+    m.push_str("array[1..num_deps] of int: deps_from = [");
+    for (i, v) in deps_from.iter().enumerate() {
+        if i > 0 { m.push_str(", "); }
+        m.push_str(&(v + 1).to_string());
+    }
+    m.push_str("];\n");
+
+    m.push_str("array[1..num_deps] of int: deps_to = [");
+    for (i, v) in deps_to.iter().enumerate() {
+        if i > 0 { m.push_str(", "); }
+        m.push_str(&(v + 1).to_string());
+    }
+    m.push_str("];\n");
+
+    m.push_str("\
+array[1..num_tasks] of var 0..horizon: start;
+array[1..num_tasks] of var 0..num_cooks: cook;
+
+constraint forall(i in 1..num_deps)(
+  start[deps_to[i]] >= start[deps_from[i]] + duration[deps_from[i]]
+);
+
+constraint forall(i in 1..num_tasks, j in 1..num_tasks where i < j /\\ resource[i] > 0 /\\ resource[i] = resource[j])(
+  start[i] + duration[i] <= start[j] \\/ start[j] + duration[j] <= start[i]
+);
+
+constraint forall(i in 1..num_tasks where needs_cook[i])(cook[i] > 0);
+constraint forall(i in 1..num_tasks where not needs_cook[i])(cook[i] = 0);
+
+constraint forall(i in 1..num_tasks, j in 1..num_tasks where i < j /\\ needs_cook[i] /\\ needs_cook[j] /\\ cook[i] = cook[j])(
+  start[i] + duration[i] <= start[j] \\/ start[j] + duration[j] <= start[i]
+);
+
+array[1..num_recipes] of var 0..horizon: recipe_end;
+constraint forall(r in 1..num_recipes)(
+  recipe_end[r] = max([start[t] + duration[t] | t in 1..num_tasks where recipe_of[t] = r])
+);
+
+var 0..horizon: max_end = max(recipe_end);
+var 0..horizon: min_recipe_end = min(recipe_end);
+
+solve minimize max_end * (horizon + 1) + (max_end - min_recipe_end);
+
+output [\"start = \", show(start), \";\\ncook = \", show(cook), \";\\n\"];");
+
+    m
 }
 
 pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
+    let num_recipes = recipes.len();
+
     let mut tasks = Vec::new();
+    let mut id_to_idx: HashMap<String, usize> = HashMap::new();
 
-    let mut resource_available: HashMap<String, u32> = kitchen
-        .equipment
-        .iter()
-        .map(|e| (e.id.clone(), 0))
-        .collect();
-
-    let mut cook_available: HashMap<String, u32> = cooks
-        .iter()
-        .map(|c| (c.name.clone(), 0))
-        .collect();
-
-    // Compute standalone durations and sort recipes longest-first
-    let mut recipe_info: Vec<(&Recipe, u32)> = recipes
-        .iter()
-        .map(|r| (r, standalone_recipe_duration(kitchen, r)))
-        .collect();
-    recipe_info.sort_by(|a, b| b.1.cmp(&a.1));
-
-    let pacing_end = recipe_info
-        .first()
-        .map(|(_, d)| *d)
-        .unwrap_or(0);
-
-    for &(recipe, duration) in &recipe_info {
-        let recipe_target_start = pacing_end.saturating_sub(duration);
-        schedule_recipe(
-            kitchen,
-            recipe,
-            recipe_target_start,
-            &mut resource_available,
-            &mut cook_available,
-            &mut tasks,
-        );
-    }
-
-    Plan {
-        start_time: "18:00".to_string(),
-        tasks,
-    }
-}
-
-fn schedule_recipe(
-    kitchen: &Kitchen,
-    recipe: &Recipe,
-    recipe_target_start: u32,
-    resource_available: &mut HashMap<String, u32>,
-    cook_available: &mut HashMap<String, u32>,
-    tasks: &mut Vec<Task>,
-) {
-    let mut step_finish: HashMap<String, u32> = HashMap::new();
-
-    for step in topological_sort(&recipe.steps) {
-        let dep_finish = step
-            .dependencies
-            .iter()
-            .filter_map(|d| step_finish.get(d))
-            .max()
-            .copied()
-            .unwrap_or(0);
-
-        let resource_ready = step
-            .resource_id
-            .as_ref()
-            .and_then(|rid| resource_available.get(rid).copied())
-            .unwrap_or(0);
-
-        let cook_name = pick_cook(cook_available);
-        let cook_ready = cook_name
-            .as_ref()
-            .and_then(|name| cook_available.get(name))
-            .copied()
-            .unwrap_or(0);
-
-        let start = dep_finish
-            .max(resource_ready)
-            .max(cook_ready)
-            .max(recipe_target_start);
-        let finish = start + step.duration_minutes;
-
-        if let Some(rid) = &step.resource_id {
-            resource_available.insert(rid.clone(), finish);
-        }
-
-        if needs_cook(&step.resource_id, kitchen) {
-            if let Some(ref name) = cook_name {
-                cook_available.insert(name.clone(), finish);
-            }
-        }
-
-        step_finish.insert(step.id.clone(), finish);
-
-        let task_prefix = &recipe.name;
-
-        tasks.push(Task {
-            id: format!("{}:{}", task_prefix, step.id),
-            description: format!("{}: {}", task_prefix, step.description),
-            start_offset_minutes: start,
-            duration_minutes: step.duration_minutes,
-            resource_id: step.resource_id.clone(),
-            cook: cook_name,
-            dependencies: step
-                .dependencies
-                .iter()
-                .map(|dep_id| format!("{}:{}", task_prefix, dep_id))
-                .collect(),
-        });
-    }
-}
-
-fn topological_sort(steps: &[crate::recipe::Step]) -> Vec<crate::recipe::Step> {
-    let step_map: HashMap<&str, &crate::recipe::Step> =
-        steps.iter().map(|s| (s.id.as_str(), s)).collect();
-
-    let mut in_degree: HashMap<&str, usize> = HashMap::new();
-    let mut dependents: HashMap<&str, Vec<&str>> = HashMap::new();
-
-    for step in steps {
-        in_degree.entry(step.id.as_str()).or_insert(0);
-        for dep in &step.dependencies {
-            dependents.entry(dep).or_default().push(step.id.as_str());
-            *in_degree.entry(step.id.as_str()).or_insert(0) += 1;
+    for (ri, recipe) in recipes.iter().enumerate() {
+        for step in &recipe.steps {
+            let tid = format!("{}:{}", recipe.name, step.id);
+            let deps: Vec<String> = step.dependencies.iter()
+                .map(|d| format!("{}:{}", recipe.name, d))
+                .collect();
+            let idx = tasks.len();
+            id_to_idx.insert(tid.clone(), idx);
+            tasks.push(TaskData {
+                id: tid,
+                description: step.description.clone(),
+                duration_minutes: step.duration_minutes,
+                resource_id: step.resource_id.clone(),
+                dependencies: deps,
+                recipe_idx: ri,
+            });
         }
     }
 
-    let mut queue: Vec<&str> = in_degree
-        .iter()
-        .filter(|entry| *entry.1 == 0)
-        .map(|entry| *entry.0)
-        .collect();
+    let mut resource_to_idx: HashMap<Option<String>, usize> = HashMap::new();
+    resource_to_idx.insert(None, 0);
+    for task in &tasks {
+        let len = resource_to_idx.len();
+        resource_to_idx.entry(task.resource_id.clone()).or_insert(len);
+    }
 
-    let mut sorted = Vec::new();
-
-    while let Some(id) = queue.pop() {
-        if let Some(step) = step_map.get(id) {
-            sorted.push((*step).clone());
-        }
-        if let Some(deps) = dependents.get(id) {
-            for &dep_id in deps {
-                if let Some(deg) = in_degree.get_mut(dep_id) {
-                    *deg = deg.saturating_sub(1);
-                    if *deg == 0 {
-                        queue.push(dep_id);
-                    }
+    let mut deps_from = Vec::new();
+    let mut deps_to = Vec::new();
+    let mut encountered_deps = HashSet::new();
+    for task in &tasks {
+        let task_idx = id_to_idx[&task.id];
+        for dep_id in &task.dependencies {
+            if let Some(&dep_idx) = id_to_idx.get(dep_id) {
+                if encountered_deps.insert((dep_idx, task_idx)) {
+                    deps_from.push(dep_idx);
+                    deps_to.push(task_idx);
                 }
             }
         }
     }
 
-    sorted
+    let num_cooks = cooks.len();
+    let horizon: u32 = tasks.iter().map(|t| t.duration_minutes).sum();
+
+    let durations: Vec<u32> = tasks.iter().map(|t| t.duration_minutes).collect();
+    let resources: Vec<usize> = tasks.iter()
+        .map(|t| resource_to_idx[&t.resource_id])
+        .collect();
+    let needs_cook_arr: Vec<bool> = tasks.iter()
+        .map(|t| needs_cook(&t.resource_id, kitchen))
+        .collect();
+    let recipe_of: Vec<usize> = tasks.iter().map(|t| t.recipe_idx).collect();
+
+    let model = build_model(
+        &durations,
+        &resources,
+        &needs_cook_arr,
+        &recipe_of,
+        &deps_from,
+        &deps_to,
+        num_cooks,
+        num_recipes,
+        horizon,
+    );
+
+    let model_path = std::env::temp_dir().join(format!(
+        "kitchen_planner_{}.mzn",
+        std::process::id()
+    ));
+    let mut tmp = fs::File::create(&model_path).expect("failed to create temp file");
+    write!(tmp, "{}", model).expect("failed to write model");
+    drop(tmp);
+
+    let output = Command::new("minizinc")
+        .arg("--solver")
+        .arg("gecode")
+        .arg("--json-stream")
+        .arg("--time-limit")
+        .arg("10000")
+        .arg(&model_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("failed to execute minizinc");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    if !output.status.success() {
+        eprintln!("minizinc error (exit code: {:?}):", output.status.code());
+        eprintln!("stderr: {}", stderr);
+        eprintln!("stdout: {}", stdout);
+        eprintln!("model file: {}", model_path.display());
+        std::process::exit(1);
+    }
+
+    let _ = fs::remove_file(&model_path);
+    let mut last_solution: Option<(Vec<u32>, Vec<usize>)> = None;
+
+    fn parse_array(s: &str) -> Option<Vec<i64>> {
+        let s = s.trim();
+        if !s.starts_with('[') || !s.ends_with(']') {
+            return None;
+        }
+        let inner = &s[1..s.len() - 1];
+        if inner.is_empty() {
+            return Some(Vec::new());
+        }
+        inner.split(',')
+            .map(|n| n.trim().parse::<i64>().ok())
+            .collect()
+    }
+
+    for line in stdout.lines() {
+        let parsed: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if parsed.get("type").and_then(|t| t.as_str()) != Some("solution") {
+            continue;
+        }
+        let output_str = match parsed.get("output").and_then(|o| o.get("default")).and_then(|s| s.as_str()) {
+            Some(s) => s,
+            None => continue,
+        };
+
+        let mut start_vals: Option<Vec<u32>> = None;
+        let mut cook_vals: Option<Vec<usize>> = None;
+
+        for line in output_str.lines() {
+            if let Some(arr_str) = line.strip_prefix("start = ").and_then(|s| s.strip_suffix(';')) {
+                if let Some(v) = parse_array(arr_str) {
+                    start_vals = Some(v.into_iter().map(|x| x as u32).collect());
+                }
+            }
+            if let Some(arr_str) = line.strip_prefix("cook = ").and_then(|s| s.strip_suffix(';')) {
+                if let Some(v) = parse_array(arr_str) {
+                    cook_vals = Some(v.into_iter().map(|x| x as usize).collect());
+                }
+            }
+        }
+
+        if let (Some(start_vals), Some(cook_vals)) = (start_vals, cook_vals) {
+            if start_vals.len() == tasks.len() && cook_vals.len() == tasks.len() {
+                last_solution = Some((start_vals, cook_vals));
+            }
+        }
+    }
+
+    let (start_vals, cook_vals) = last_solution.expect("no solution found from minizinc");
+
+    let plan_tasks: Vec<Task> = tasks.iter().enumerate().map(|(i, task)| {
+        let cook_idx = cook_vals[i];
+        let cook_name = if cook_idx > 0 && cook_idx <= cooks.len() {
+            Some(cooks[cook_idx - 1].name.clone())
+        } else {
+            None
+        };
+        let deps_ids: Vec<String> = task.dependencies
+            .iter()
+            .filter(|d| id_to_idx.contains_key(d.as_str()))
+            .cloned()
+            .collect();
+
+        Task {
+            id: task.id.clone(),
+            description: format!("{}: {}", task.id.split(':').next().unwrap_or(""), task.description),
+            start_offset_minutes: start_vals[i],
+            duration_minutes: task.duration_minutes,
+            resource_id: task.resource_id.clone(),
+            cook: cook_name,
+            dependencies: deps_ids,
+        }
+    }).collect();
+
+    Plan {
+        start_time: "18:00".to_string(),
+        tasks: plan_tasks,
+    }
+}
+
+struct TaskData {
+    id: String,
+    description: String,
+    duration_minutes: u32,
+    resource_id: Option<String>,
+    dependencies: Vec<String>,
+    recipe_idx: usize,
 }

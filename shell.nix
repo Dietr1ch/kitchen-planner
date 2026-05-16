@@ -7,9 +7,14 @@ pkgs.mkShell {
   buildInputs = with pkgs; [
     nixpkgs-fmt
 
+    # Rust
     rustToolchain
     bacon
     cargo-nextest
+
+    # Solver
+    minizinc
+    gecode
   ];
 
   # Environment
