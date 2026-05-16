@@ -15,6 +15,7 @@
 !.ignore
 !.spelling
 !.treefmt.toml
+logs/
 TODOs.org
 devenv.local*
 
