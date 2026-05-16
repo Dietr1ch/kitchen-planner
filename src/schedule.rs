@@ -245,8 +245,51 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
 				duration_by_skill: step.duration_by_skill.clone(),
 				skill: step.skill.clone(),
 				min_skill_level: step.min_skill_level,
+				temperature_celsius: step.temperature_celsius,
 			});
 		}
+	}
+
+	// Inject pre-heat tasks for steps requiring a specific temperature.
+	// Duration is computed from the fastest equipment matching the required kind.
+	// See README for details on this assumption.
+	let mut preheat_insertions: Vec<(usize, String, u32, String, u16)> = Vec::new();
+	for (i, task) in tasks.iter().enumerate() {
+		if let Some(temp) = task.temperature_celsius {
+			if let Some(ref kind) = task.resource_kind {
+				let min_rate = kitchen
+					.equipment
+					.iter()
+					.filter(|e| e.kind == *kind)
+					.map(|e| e.preheat_rate_minutes_per_celsius)
+					.fold(f64::INFINITY, f64::min);
+				if min_rate.is_finite() {
+					let delta = temp as f64 - kitchen.ambient_temperature_celsius;
+					let duration = (min_rate * delta).round() as u32;
+					let preheat_id = format!("{}.preheat", task.id);
+					preheat_insertions.push((i, preheat_id, duration, kind.clone(), temp));
+				}
+			}
+		}
+	}
+	for (bake_idx, preheat_id, duration, kind, temp) in preheat_insertions {
+		let preheat_task = TaskData {
+			id: preheat_id.clone(),
+			description: format!("Pre-heat {} to {}°C", kind, temp),
+			duration_minutes: duration,
+			resource_kind: Some(kind),
+			dependencies: Vec::new(),
+			recipe_idx: tasks[bake_idx].recipe_idx,
+			needs_cook: false,
+			duration_by_skill: None,
+			skill: None,
+			min_skill_level: None,
+			temperature_celsius: None,
+		};
+		let idx = tasks.len();
+		id_to_idx.insert(preheat_id.clone(), idx);
+		tasks.push(preheat_task);
+		tasks[bake_idx].dependencies.push(preheat_id);
 	}
 
 	let equipment: Vec<EquipInfo> = kitchen
@@ -564,4 +607,5 @@ struct TaskData {
 	duration_by_skill: Option<HashMap<SkillLevel, u32>>,
 	skill: Option<String>,
 	min_skill_level: Option<SkillLevel>,
+	temperature_celsius: Option<u16>,
 }

@@ -4,7 +4,7 @@
     (id: "st-2", name: "Back Left Burner", kind: "burner"),
     (id: "st-3", name: "Back Right Burner", kind: "burner"),
     (id: "st-4", name: "Front Right Burner", kind: "burner"),
-    (id: "ov-1", name: "Main Oven", kind: "oven"),
+    (id: "ov-1", name: "Main Oven", kind: "oven", preheat_rate_minutes_per_celsius: 0.1),
     (id: "pot-1", name: "Large Stockpot", kind: "pot"),
     (id: "pot-2", name: "Medium Saucepan", kind: "pot"),
     (id: "pot-3", name: "Frying Pan", kind: "pot"),

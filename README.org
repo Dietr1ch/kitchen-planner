@@ -283,6 +283,11 @@ kitchen-planner/
 - ~skill~ / ~min_skill_level~ / ~duration_by_skill~ on recipe steps enable
   skill-adaptive durations; the solver assigns tasks to eligible cooks and
   picks the best available duration for their skill level
+- ~temperature_celsius~ on recipe steps triggers automatic injection of a
+  pre-heat task. The pre-heat duration is computed from the fastest equipment
+  matching the step's ~resource_kind~; this is exact for single-oven kitchens,
+  and for multi-oven kitchens the solver naturally prefers the faster oven to
+  minimize makespan
 - ~data-start~ and ~data-cook~ HTML attributes on Gantt rows enable
   client-side column sorting by start time or cook name
 

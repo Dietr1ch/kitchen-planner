@@ -41,6 +41,8 @@ pub struct Step {
 	pub min_skill_level: Option<SkillLevel>,
 	#[serde(default)]
 	pub duration_by_skill: Option<HashMap<SkillLevel, u32>>,
+	#[serde(default)]
+	pub temperature_celsius: Option<u16>,
 }
 
 fn default_true() -> bool {
