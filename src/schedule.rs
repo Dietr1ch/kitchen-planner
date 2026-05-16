@@ -8,10 +8,6 @@ use crate::models::kitchen::Kitchen;
 use crate::models::plan::{Plan, Task};
 use crate::models::recipe::Recipe;
 
-fn needs_cook(resource_kind: &Option<String>) -> bool {
-    resource_kind.as_deref().map_or(false, |k| k != "oven")
-}
-
 fn build_model(
     durations: &[u32],
     needs_cook_arr: &[bool],
@@ -166,6 +162,7 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
                 resource_kind: step.resource_kind.clone(),
                 dependencies: deps,
                 recipe_idx: ri,
+                needs_cook: step.needs_cook,
             });
         }
     }
@@ -218,7 +215,7 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
 
     let durations: Vec<u32> = tasks.iter().map(|t| t.duration_minutes).collect();
     let needs_cook_arr: Vec<bool> = tasks.iter()
-        .map(|t| needs_cook(&t.resource_kind))
+        .map(|t| t.needs_cook)
         .collect();
     let recipe_of: Vec<usize> = tasks.iter().map(|t| t.recipe_idx).collect();
 
@@ -381,4 +378,5 @@ struct TaskData {
     resource_kind: Option<String>,
     dependencies: Vec<String>,
     recipe_idx: usize,
+    needs_cook: bool,
 }

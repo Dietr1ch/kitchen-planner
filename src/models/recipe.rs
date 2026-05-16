@@ -29,4 +29,8 @@ pub struct Step {
     pub dependencies: Vec<String>,
     #[serde(default)]
     pub optional: bool,
+    #[serde(default = "default_true")]
+    pub needs_cook: bool,
 }
+
+fn default_true() -> bool { true }
