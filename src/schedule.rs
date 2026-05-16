@@ -31,6 +31,8 @@ fn build_model(
 	cook_skill_level: &[Vec<usize>],
 	required_skill: &[usize],
 	min_level: &[usize],
+	preheat_indices: &[usize],
+	preheat_bake_indices: &[usize],
 ) -> String {
 	let num_tasks = durations.len();
 	let num_deps = deps_from.len();
@@ -124,6 +126,26 @@ fn build_model(
 	}
 	m.push_str("];\n");
 
+	m.push_str(&format!("int: num_preheats = {};\n", preheat_indices.len()));
+	if !preheat_indices.is_empty() {
+		m.push_str("array[1..num_preheats] of int: preheat_tasks = [");
+		for (i, &idx) in preheat_indices.iter().enumerate() {
+			if i > 0 {
+				m.push_str(", ");
+			}
+			m.push_str(&(idx + 1).to_string());
+		}
+		m.push_str("];\n");
+		m.push_str("array[1..num_preheats] of int: preheat_bakes = [");
+		for (i, &idx) in preheat_bake_indices.iter().enumerate() {
+			if i > 0 {
+				m.push_str(", ");
+			}
+			m.push_str(&(idx + 1).to_string());
+		}
+		m.push_str("];\n");
+	}
+
 	m.push_str("array[1..num_deps] of int: deps_from = [");
 	for (i, v) in deps_from.iter().enumerate() {
 		if i > 0 {
@@ -211,7 +233,9 @@ constraint forall(r in 1..num_recipes)(
 var 0..horizon: max_end = max(recipe_end);
 var 0..horizon: min_recipe_end = min(recipe_end);
 
-solve minimize max_end * (horizon + 1) + (max_end - min_recipe_end);
+var 0..horizon: total_waste = if num_preheats > 0 then sum(p in 1..num_preheats)(start[preheat_bakes[p]] - (start[preheat_tasks[p]] + actual_duration[preheat_tasks[p]])) else 0 endif;
+
+solve minimize max_end * (horizon + 1) * (1 + num_preheats) + (max_end - min_recipe_end) * (1 + num_preheats) + total_waste;
 
 output [\"start = \", show(start), \";\\ncook = \", show(cook), \";\\nassign = \", show(assign), \";\\n\"];");
 
@@ -253,6 +277,9 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
 	// Inject pre-heat tasks for steps requiring a specific temperature.
 	// Duration is computed from the fastest equipment matching the required kind.
 	// See README for details on this assumption.
+	// Pre-heat tasks depend on the grandparent steps of the bake step
+	// (dependencies of the bake's direct dependencies) so the oven doesn't
+	// heat far before the ingredients are ready.
 	let mut preheat_insertions: Vec<(usize, String, u32, String, u16)> = Vec::new();
 	for (i, task) in tasks.iter().enumerate() {
 		if let Some(temp) = task.temperature_celsius {
@@ -272,14 +299,16 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
 			}
 		}
 	}
+	let mut preheat_pairs: Vec<(usize, usize)> = Vec::new();
 	for (bake_idx, preheat_id, duration, kind, temp) in preheat_insertions {
+		let recipe_idx = tasks[bake_idx].recipe_idx;
 		let preheat_task = TaskData {
 			id: preheat_id.clone(),
 			description: format!("Pre-heat {} to {}°C", kind, temp),
 			duration_minutes: duration,
 			resource_kind: Some(kind),
 			dependencies: Vec::new(),
-			recipe_idx: tasks[bake_idx].recipe_idx,
+			recipe_idx,
 			needs_cook: false,
 			duration_by_skill: None,
 			skill: None,
@@ -290,6 +319,7 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
 		id_to_idx.insert(preheat_id.clone(), idx);
 		tasks.push(preheat_task);
 		tasks[bake_idx].dependencies.push(preheat_id);
+		preheat_pairs.push((idx, bake_idx));
 	}
 
 	let equipment: Vec<EquipInfo> = kitchen
@@ -415,6 +445,8 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
 		}
 	}
 
+	let preheat_indices: Vec<usize> = preheat_pairs.iter().map(|&(p, _)| p).collect();
+	let preheat_bake_indices: Vec<usize> = preheat_pairs.iter().map(|&(_, b)| b).collect();
 	let model = build_model(
 		&durations,
 		&needs_cook_arr,
@@ -435,6 +467,8 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
 		&cook_skill_level,
 		&required_skill,
 		&min_level,
+		&preheat_indices,
+		&preheat_bake_indices,
 	);
 
 	let model_path =
