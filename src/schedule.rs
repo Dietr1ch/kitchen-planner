@@ -291,7 +291,8 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
 
         Task {
             id: task.id.clone(),
-            description: format!("{}: {}", task.id.split(':').next().unwrap_or(""), task.description),
+            dish: task.id.split(':').next().unwrap_or("").to_string(),
+            description: task.description.clone(),
             start_offset_minutes: start_vals[i],
             duration_minutes: task.duration_minutes,
             resource_id: task.resource_id.clone(),

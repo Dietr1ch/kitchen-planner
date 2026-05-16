@@ -68,6 +68,7 @@ tr.dep-upstream { background: #fff3e0 !important; }
 tr.dep-upstream .bar { background: #ff9800 !important; }
 tr.dep-downstream { background: #e3f2fd !important; }
 tr.dep-downstream .bar { background: #2196f3 !important; }
+.cook-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; color: #fff; font-weight: 500; font-size: 0.85rem; }
 
 @media (max-width: 700px) {
   .bar-container { min-width: 100px; }
@@ -99,6 +100,7 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
     <thead>
       <tr>
         <th>Duration</th>
+        <th>Dish</th>
         <th>Task</th>
         <th>Dependencies</th>
         <th>Cook</th>
@@ -122,6 +124,17 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
   function showError(msg) {
     errorMsg.textContent = msg;
     errorMsg.style.display = msg ? 'block' : 'none';
+  }
+
+  function cookColor(name) {
+    if (name === '(none)') return null;
+    var hash = 0;
+    for (var i = 0; i < name.length; i++) {
+      hash = ((hash << 5) - hash) + name.charCodeAt(i);
+      hash |= 0;
+    }
+    var hue = ((hash % 360) + 360) % 360;
+    return 'hsl(' + hue + ', 60%, 50%)';
   }
 
   function escapeHtml(s) {
@@ -155,16 +168,24 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
       var barLabel = start + '\u2013' + end;
       var taskId = escapeHtml(t.id || '');
       var depIds = (t.dependencies || []).map(escapeHtml).join(', ');
+      var dish = escapeHtml(t.dish || '');
       var desc = escapeHtml(t.description);
       var deps = shortDeps(t.dependencies || []);
-      var cook = escapeHtml(t.cook || '(none)');
+      var cook = t.cook || '(none)';
+      var escapedCook = escapeHtml(cook);
       var resource = escapeHtml(t.resource_id || '(none)');
+
+      var cookColorVal = cookColor(cook);
+      var cookCell = cookColorVal
+        ? '<span class="cook-badge" style="background:' + cookColorVal + ';">' + escapedCook + '</span>'
+        : escapedCook;
 
       rows += '<tr data-task-id="' + taskId + '" data-depends-on="' + depIds + '">'
         + '<td><div class="bar-container"><div class="bar" style="margin-left:' + offsetPct + '%;width:' + widthPct + '%;">' + barLabel + '</div></div></td>'
+        + '<td>' + dish + '</td>'
         + '<td>' + desc + '</td>'
         + '<td>' + deps + '</td>'
-        + '<td>' + cook + '</td>'
+        + '<td>' + cookCell + '</td>'
         + '<td>' + resource + '</td>'
         + '</tr>\n';
     }

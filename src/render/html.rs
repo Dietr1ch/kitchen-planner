@@ -19,6 +19,7 @@ impl Renderer for HtmlRenderer {
 
             let resource = task.resource_id.as_deref().unwrap_or("(none)");
             let cook = task.cook.as_deref().unwrap_or("(none)");
+            let dish = html_escape(&task.dish);
             let desc = html_escape(&task.description);
             let deps = short_deps(&task.dependencies);
 
@@ -29,6 +30,16 @@ impl Renderer for HtmlRenderer {
                 .map(|d| html_escape(d))
                 .collect::<Vec<_>>()
                 .join(", ");
+
+            let cook_cell = if cook == "(none)" {
+                cook.to_string()
+            } else {
+                format!(
+                    "<span class=\"cook-badge\" style=\"background: {};\">{}</span>",
+                    cook_color(cook),
+                    cook,
+                )
+            };
 
             let bar_label = format!("{}–{}", start, end);
 
@@ -42,11 +53,12 @@ impl Renderer for HtmlRenderer {
                     "<td>{}</td>",
                     "<td>{}</td>",
                     "<td>{}</td>",
+                    "<td>{}</td>",
                     "</tr>\n",
                 ),
                 task_id, dep_ids,
                 offset_pct, width_pct, bar_label,
-                desc, deps, cook, resource,
+                dish, desc, deps, cook_cell, resource,
             ));
         }
 
@@ -71,13 +83,14 @@ impl Renderer for HtmlRenderer {
                 "tr.dep-downstream .bar {{ background: #2196f3 !important; }}\n",
                 ".bar-container {{ background: #f0f0f0; border-radius: 4px; height: 24px; position: relative; min-width: 200px; overflow: hidden; }}\n",
                 ".bar {{ background: #4caf50; height: 24px; border-radius: 4px; display: flex; align-items: center; padding: 0 8px; color: white; font-size: 12px; white-space: nowrap; box-sizing: border-box; min-width: fit-content; cursor: pointer; }}\n",
+                ".cook-badge {{ display: inline-block; padding: 2px 8px; border-radius: 4px; color: #fff; font-weight: 500; font-size: 0.85rem; }}\n",
                 "</style>\n",
                 "</head>\n",
                 "<body>\n",
                 "<h1>Kitchen Planner - Gantt Chart</h1>\n",
                 "<p>Plan start time: {}</p>\n",
                 "<table id=\"gantt\">\n",
-                "<thead><tr><th>Duration</th><th>Task</th><th>Dependencies</th><th>Cook</th><th>Resource</th></tr></thead>\n",
+                "<thead><tr><th>Duration</th><th>Dish</th><th>Task</th><th>Dependencies</th><th>Cook</th><th>Resource</th></tr></thead>\n",
                 "<tbody>\n",
                 "{}</tbody>\n",
                 "</table>\n",
@@ -112,6 +125,12 @@ impl Renderer for HtmlRenderer {
             plan.start_time, rows,
         )
     }
+}
+
+fn cook_color(name: &str) -> String {
+    let hash: u32 = name.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
+    let hue = hash % 360;
+    format!("hsl({}, 60%, 50%)", hue)
 }
 
 fn html_escape(s: &str) -> String {

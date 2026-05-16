@@ -13,8 +13,9 @@ impl Renderer for TextRenderer {
         out.push_str("Kitchen Planner - Gantt Chart\n\n");
         out.push_str(&format!("Plan start time: {}\n\n", plan.start_time));
         out.push_str(&format!(
-            "{:<bar_width$} │ {:<42} │ {:<14} │ {:<10} │ {}\n",
+            "{:<bar_width$} │ {:<12} │ {:<38} │ {:<14} │ {:<10} │ {}\n",
             "Duration",
+            "Dish",
             "Task",
             "Deps",
             "Cook",
@@ -22,9 +23,10 @@ impl Renderer for TextRenderer {
             bar_width = bar_width
         ));
         out.push_str(&format!(
-            "{} ┼ {} ┼ {} ┼ {} ┼ {}\n",
+            "{} ┼ {} ┼ {} ┼ {} ┼ {} ┼ {}\n",
             "─".repeat(bar_width),
-            "─".repeat(42),
+            "─".repeat(12),
+            "─".repeat(38),
             "─".repeat(14),
             "─".repeat(10),
             "─".repeat(10)
@@ -60,14 +62,15 @@ impl Renderer for TextRenderer {
                 width = bar_width
             );
 
-            let desc = truncate(&task.description, 39);
+            let dish = truncate(&task.dish, 12);
+            let desc = truncate(&task.description, 35);
             let deps = short_deps(&task.dependencies);
             let resource = task.resource_id.as_deref().unwrap_or("(none)");
             let cook = task.cook.as_deref().unwrap_or("(none)");
 
             out.push_str(&format!(
-                "{} │ {:<42} │ {:<14} │ {:<10} │ {}\n",
-                bar_column, desc, deps, cook, resource
+                "{} │ {:<12} │ {:<38} │ {:<14} │ {:<10} │ {}\n",
+                bar_column, dish, desc, deps, cook, resource
             ));
         }
 

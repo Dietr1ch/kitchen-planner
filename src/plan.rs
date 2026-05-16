@@ -10,6 +10,8 @@ pub struct Plan {
 pub struct Task {
     #[serde(default)]
     pub id: String,
+    #[serde(default)]
+    pub dish: String,
     pub description: String,
     pub start_offset_minutes: u32,
     pub duration_minutes: u32,
