@@ -617,9 +617,7 @@ pub fn schedule(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Plan {
 		})
 		.collect();
 
-	Plan {
-		tasks: plan_tasks,
-	}
+	Plan { tasks: plan_tasks }
 }
 
 struct EquipInfo {
