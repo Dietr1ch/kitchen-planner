@@ -58,4 +58,4 @@ run-html path:
 
 serve:
 	@echo "Open http://localhost:3004 in your browser"
-	static-web-server -c .config/server.toml
+	static-web-server --config-file .config/server.toml
