@@ -305,52 +305,70 @@ pub fn schedule(
 		}
 	}
 
-	// Inject pre-heat tasks for steps requiring a specific temperature.
-	// Duration is computed from the fastest equipment matching the required kind.
-	// See README for details on this assumption.
-	// Pre-heat tasks depend on the grandparent steps of the bake step
-	// (dependencies of the bake's direct dependencies) so the oven doesn't
-	// heat far before the ingredients are ready.
-	let mut preheat_insertions: Vec<(usize, String, u32, String, u16)> = Vec::new();
+	// Inject pre-heat tasks — one per distinct temperature per equipment kind.
+	// Pre-heats on the same kind are chained (lower temp → higher temp) so each
+	// duration is computed from the delta to the previous temp, not from ambient.
+	// A bake step at temp T depends on the pre-heat at temp T.
+	// Baking at a hotter temp than required risks overcooking, so each temp level
+	// gets its own pre-heat rather than sharing one max-temp pre-heat.
+	let mut kind_temps: HashMap<String, Vec<u16>> = HashMap::new();
+	let mut temp_to_bakes: HashMap<(String, u16), Vec<usize>> = HashMap::new();
 	for (i, task) in tasks.iter().enumerate() {
 		if let Some(temp) = task.temperature_celsius
 			&& let Some(kind) = task.resource_kinds.first()
 		{
-			let min_rate = kitchen
-				.equipment
-				.iter()
-				.filter(|e| e.kind == *kind)
-				.map(|e| e.preheat_rate_minutes_per_celsius)
-				.fold(f64::INFINITY, f64::min);
-			if min_rate.is_finite() {
-				let delta = temp as f64 - kitchen.ambient_temperature_celsius;
-				let duration = (min_rate * delta).round() as u32;
-				let preheat_id = format!("{}.preheat", task.id);
-				preheat_insertions.push((i, preheat_id, duration, kind.clone(), temp));
-			}
+			kind_temps.entry(kind.clone()).or_default().push(temp);
+			temp_to_bakes.entry((kind.clone(), temp)).or_default().push(i);
 		}
 	}
 	let mut preheat_pairs: Vec<(usize, usize)> = Vec::new();
-	for (bake_idx, preheat_id, duration, kind, temp) in preheat_insertions {
-		let recipe_idx = tasks[bake_idx].recipe_idx;
-		let preheat_task = TaskData {
-			id: preheat_id.clone(),
-			description: format!("Pre-heat {} to {}°C", kind, temp),
-			duration_minutes: duration,
-			resource_kinds: vec![kind],
-			dependencies: Vec::new(),
-			recipe_idx,
-			needs_cook: false,
-			duration_by_skill: None,
-			skill: None,
-			min_skill_level: None,
-			temperature_celsius: None,
-		};
-		let idx = tasks.len();
-		id_to_idx.insert(preheat_id.clone(), idx);
-		tasks.push(preheat_task);
-		tasks[bake_idx].dependencies.push(preheat_id);
-		preheat_pairs.push((idx, bake_idx));
+	for (kind, temps) in &kind_temps {
+		let min_rate = kitchen
+			.equipment
+			.iter()
+			.filter(|e| e.kind == *kind)
+			.map(|e| e.preheat_rate_minutes_per_celsius)
+			.fold(f64::INFINITY, f64::min);
+		if min_rate <= 0.0 || !min_rate.is_finite() {
+			continue;
+		}
+		let mut unique_temps: Vec<u16> = temps.clone();
+		unique_temps.sort();
+		unique_temps.dedup();
+		let mut prev_temp = kitchen.ambient_temperature_celsius as u16;
+		let mut prev_preheat_id: Option<String> = None;
+		for &temp in &unique_temps {
+			let delta = (temp as f64 - prev_temp as f64).max(0.0);
+			let duration = (min_rate * delta).round() as u32;
+			let preheat_id = format!("{}:preheat:{}", kind, temp);
+			let mut deps = Vec::new();
+			if let Some(ref prev_id) = prev_preheat_id {
+				deps.push(prev_id.clone());
+			}
+			let bake_idx = temp_to_bakes[&(kind.clone(), temp)][0];
+			let preheat_task = TaskData {
+				id: preheat_id.clone(),
+				description: format!("Pre-heat {} to {}°C", kind, temp),
+				duration_minutes: duration,
+				resource_kinds: vec![kind.clone()],
+				dependencies: deps,
+				recipe_idx: tasks[bake_idx].recipe_idx,
+				needs_cook: false,
+				duration_by_skill: None,
+				skill: None,
+				min_skill_level: None,
+				temperature_celsius: None,
+			};
+			let idx = tasks.len();
+			id_to_idx.insert(preheat_id.clone(), idx);
+			tasks.push(preheat_task);
+			for &bi in &temp_to_bakes[&(kind.clone(), temp)] {
+				tasks[bi].dependencies.push(preheat_id.clone());
+				preheat_pairs.push((idx, bi));
+			}
+			prev_temp = temp;
+			prev_preheat_id = Some(preheat_id);
+		}
 	}
 
 	let equipment: Vec<EquipInfo> = kitchen
