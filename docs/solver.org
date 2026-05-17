@@ -1,0 +1,35 @@
+#+title: Solver (=schedule= binary)
+
+Uses MiniZinc with Gecode to produce an optimized schedule.
+
+* Model
+
+** Decision variables
+
+- =start[t]= (0..horizon)
+- =cook[t]= (0..num_cooks)
+- =assign[t]= (0..num_equipment)
+
+** Constraints
+
+- Dependency chains: =start[child] >= start[parent] + duration[parent]=
+- Resource disjunction: same-equipment tasks cannot overlap
+- Equipment kind matching: each task's =assign[t]= must map to a kitchen
+  equipment whose =kind= matches the task's =resource_kind=
+- Cook disjunction: same-cook tasks cannot overlap (=oven= tasks exempt)
+- Skill eligibility: tasks requiring a skill are only assigned to cooks
+  whose skill level meets =min_skill_level=
+
+** Objective
+
+=minimize max_end * (horizon + 1) + (max_end - min_recipe_end)=
+— weighted combination of makespan and recipe end-time alignment
+
+* Cook allocation
+
+- Tasks with =needs_cook= =false= (oven, rest, thaw, cooling) → =cook= 0 (no cook assigned)
+- Tasks with =needs_cook= =true= → assigned a distinct cook (1..num_cooks), blocking that
+  cook for the duration
+- Tasks requiring a skill (=skill= / =min_skill_level=) only assigned to cooks
+  whose level meets or exceeds the requirement; effective duration is looked up
+  from =duration_by_skill=, falling back to the nearest lower level

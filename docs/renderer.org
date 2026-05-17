@@ -1,0 +1,40 @@
+#+title: Renderer (=gantt= binary)
+
+* Text Renderer (~src/render/text.rs~)
+
+Terminal Gantt chart with proportional bars. Shows time range inside the
+duration column. Left offset is proportional to start time.
+
+- Time range shown inside the duration bar column (not a separate column):
+  saves horizontal space and keeps the time label physically on the bar
+- Uses ~▓~ characters with left offset proportional to start time;
+  bars that would overflow the column width are truncated (time label takes priority)
+
+* Self-contained Web App (~assets/gantt.html~)
+
+Standalone client-side Gantt chart viewer. Load a plan JSON file via
+drag-and-drop, file picker, or a =?url= query parameter. Implemented in
+pure HTML/CSS/JS with no external dependencies. Served locally via
+=static-web-server=:
+
+#+begin_src sh
+  just serve
+#+end_src
+
+- HTML renderer uses percentage-based ~margin-left~/~width~ with ~overflow: hidden~
+  on the bar container to prevent bars spilling into adjacent columns
+- Interactive hover highlights upstream dependencies (orange) and downstream
+  dependents (blue) via data attributes (~data-task-id~ / ~data-depends-on~)
+- Sort order can be by start time or by cook name via column header clicks
+- Two HTML rendering paths: Rust binary (~gantt --format html~) generates
+  static HTML at build time; client-side web app (~assets/gantt.html~) loads
+  and renders plan JSON at runtime via drag-and-drop or =?url=
+
+* Client-side Config UI (~assets/app.js~, ~assets/index.html~)
+
+Web interface for configuring kitchen equipment, cooks, and recipes before
+generating a plan. Features:
+- Toggle equipment/cooks/recipes on and off
+- Upload custom recipe JSON files
+- Client-side validation of preconditions before calling the solver
+- Error display with specific unmet precondition messages

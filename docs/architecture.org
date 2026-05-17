@@ -1,0 +1,32 @@
+#+title: Architecture
+
+* Modules (~src/~)
+
+| Module             | Contents                                           |
+|--------------------+----------------------------------------------------|
+| =models::kitchen=  | =Kitchen=, =Equipment=, =Food=, =Material= schemas |
+| =models::recipe=   | =Recipe=, =Step=, =Ingredient= schemas             |
+| =models::cook=     | =Cook=, =SkillLevel= enum                          |
+| =models::plan=     | =Plan=, =Task= schemas (solver output)             |
+| =schedule=         | MiniZinc model builder + solver runner             |
+| =render=           | =Renderer= trait, =TextRenderer=                  |
+| =validate=         | Pre-solver feasibility checks                      |
+| =web=              | Axum HTTP server (API + static files)              |
+
+* Binaries
+
+| Binary     | CLI Name   | Purpose                                                 |
+|------------+------------+---------------------------------------------------------|
+| =schedule= | =schedule= | Kitchen + cooks + recipes → Plan JSON (MiniZinc solver) |
+| =gantt=    | =gantt=    | Plan JSON → text/HTML Gantt chart                       |
+| =web=      | =web=      | Web server (config UI + API + solver)                   |
+
+* Data Flow
+
+#+begin_src
+kitchens/simple.ron ──┐
+cooks/*.ron         ──┤ schedule ─→ plan.json ┬→ gantt (text)
+recipes/*.ron       ──┘                       └→ gantt (HTML)
+#+end_src
+
+The web server wraps this pipeline: browser config UI → POST /api/plan → validate → schedule → render.

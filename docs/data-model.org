@@ -1,0 +1,38 @@
+#+title: Data Model
+
+* Kitchen (~data/kitchens/*.ron~)
+
+- =Equipment= — =id=, =name=, =kind= (=burner=, =oven=, =pot=, =prep_surface=)
+- =Food= — =id=, =name=, =quantity=, =unit=
+- =Materials= — =id=, =name=, =quantity=, =unit=
+
+Equipment =kind= is used by the solver to match tasks to available
+equipment. Whether a task occupies a cook is controlled by the
+=needs_cook= field on each recipe step (defaults to =true=; set to
+=false= for oven, rest, thaw, or cooling steps).
+
+* Recipe (~data/recipes/*.ron~)
+
+- =name=, =ingredients=, =steps=
+- Each =Step=: =id=, =description=, =duration_minutes=, =resource_kind=,
+  =dependencies= (step IDs within same recipe), =optional=, =needs_cook=,
+  =skill=, =min_skill_level=, =duration_by_skill=, =temperature_celsius=
+
+Resource references equipment by =kind= from the kitchen (e.g. ="oven"=,
+="burner"=, ="prep_surface"=; =null= means no equipment needed). The solver
+assigns each task to a specific piece of equipment matching the required kind.
+Dependencies are resolved by prepending =recipe_name:= to each step ID
+(e.g., =s1= → =Lasagna:s1=).
+
+* Cook (~data/cooks/*.ron~)
+
+One RON file per cook. =name=, =skills= (map of skill name to =SkillLevel=:
+=Unskilled=, =Novice=, =Intermediate=, =Advanced=, =Expert=). The solver
+uses skills to determine effective task durations: if a step defines
+=duration_by_skill=, the solver picks the best available duration matching
+the assigned cook's skill level, falling back to the nearest lower level.
+
+* Plan (solver output)
+
+- =Tasks=: =id=, =description=, =start_offset_minutes=,
+  =duration_minutes=, =resource_kind=, =resource_id=, =cook=, =dependencies=

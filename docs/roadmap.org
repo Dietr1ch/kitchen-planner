@@ -1,0 +1,6 @@
+#+title: Roadmap
+
+* TODO Recipe alternatives and optional ingredient/steps
+* TODO Plan schema as formalized output
+* TODO Web application for guided execution with timers
+* TODO Equipment capability requirements (e.g., large burner needed, smallest pot large enough)

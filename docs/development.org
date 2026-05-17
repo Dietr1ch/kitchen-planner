@@ -1,0 +1,81 @@
+#+title: Development
+
+* Prerequisites
+
+- Nix with flakes enabled
+- direnv (optional)
+
+* Setup
+
+#+begin_src sh
+  nix develop   # enters shell with Rust + minizinc + gecode
+  direnv allow  # optional automatic shell entry
+#+end_src
+
+* Commands
+
+| Command              | Action                          |
+|----------------------+---------------------------------|
+| ~just build~         | =nix build=                     |
+| ~just check~         | TypeScript check + =nix flake check= + cargo check |
+| ~just plan~          | Generate plan from data/        |
+| ~just gantt path~    | Render a plan file              |
+| ~just run~           | plan + text gantt (piped)       |
+| ~just run-html path~ | plan + HTML gantt → file        |
+| ~just serve~         | Serve web app at localhost:3004 |
+| ~cargo check~        | Rust type-check                 |
+| ~cargo test~         | Run Rust unit + integration tests |
+
+* Project Structure
+
+#+begin_src
+kitchen-planner/
+├── Cargo.toml              # serde, serde_json, clap
+├── flake.nix               # Nix build + devShell
+├── rust-toolchain.toml     # Rust 1.75+, edition 2024
+├── shell.nix               # Shell with minizinc + gecode
+├── Justfile                # Task runner
+├── tsconfig.json           # TypeScript configuration for JSDoc type-checking
+├── bindings/               # Auto-generated TypeScript type definitions (ts-rs)
+├── assets/
+│   ├── index.html          # Config UI
+│   ├── app.js              # Config UI + client-side validation
+│   ├── gantt.html          # Self-contained Gantt chart web app
+│   ├── gantt.js            # Gantt chart rendering
+│   └── style.css           # Styles
+├── .config/
+│   └── server.toml         # static-web-server config
+├── data/
+│   ├── kitchens/           # Kitchen configurations (RON)
+│   │   └── simple.ron
+│   ├── cooks/              # One RON file per cook
+│   │   ├── alice.ron
+│   │   ├── bob.ron
+│   │   ├── charlie.ron
+│   │   └── diana.ron
+│   └── recipes/
+│       ├── lasagna.ron
+│       ├── garlic-bread.ron
+│       └── mashed-potatoes.ron
+├── docs/                   # Documentation
+├── src/
+│   ├── lib.rs              # Module declarations
+│   ├── bin/
+│   │   ├── schedule.rs     # CLI: generate plan
+│   │   ├── gantt.rs        # CLI: render plan
+│   │   └── web.rs          # CLI: web server
+│   ├── models/
+│   │   ├── mod.rs
+│   │   ├── kitchen.rs      # Kitchen schema
+│   │   ├── recipe.rs       # Recipe schema
+│   │   ├── cook.rs         # Cook schema
+│   │   └── plan.rs         # Plan/Task schemas
+│   ├── schedule.rs         # MiniZinc model + solver
+│   ├── validate.rs         # Pre-solver feasibility checks
+│   ├── render/
+│   │   ├── mod.rs          # Renderer trait
+│   │   └── text.rs         # TextRenderer
+│   └── web.rs              # Axum HTTP server
+└── tests/
+    └── web.rs              # Integration tests for web server
+#+end_src

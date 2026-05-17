@@ -1,0 +1,63 @@
+#+title: Conventions & Decisions
+
+* Code Conventions
+
+- Rust edition 2024, stable toolchain (1.75+ from ~rust-toolchain.toml~)
+- ~serde~ with ~derive~ for all RON and JSON schema types
+- ~clap~ with ~derive~ for CLI argument parsing (self-documenting)
+- All file path arguments accept ~-~ as alias for stdin (resolved to ~/dev/stdin~)
+- Output uses ~write!~ + ~flush~ instead of ~print!~ to avoid SIGPIPE panics
+- Error handling
+  — Binaries (under ~src/bin/~) return ~color_eyre::Result<()>~ and propagate with ~?~ and ~.wrap_err("…")~.
+  - Library code uses plain ~Result~ with ~thiserror~-derived error types for new domain-specific errors.
+- Never use ~process::exit~ or ~unwrap~ for recoverable errors in binaries.
+- Library dependencies are fine as long as they pull their own weight.
+  - Currently we use ~serde~, ~serde_json~, ~ron~, ~clap~, ~strum~, ~thiserror~, ~googletest~, ~axum~, ~tokio~.
+- Nix/Flakes for reproducible builds; ~shell.nix~ provides ~minizinc~ + ~gecode~
+- TypeScript type definitions auto-generated from Rust structs via ~ts-rs~
+- JSDoc type annotations checked with ~tsc --noEmit~ (see ~tsconfig.json~)
+
+* Architecture Decisions
+
+- [[https://github.com/anomalyco/opencode][opencode]]-driven development — the project was built almost entirely via AI-assisted pair programming
+- Replaced an initial ad-hoc sequential heuristic with MiniZinc constraint programming
+  (the CP solver produces tighter schedules by exploring interleavings a greedy
+  heuristic misses; e.g., 100 min vs 110 min makespan for 4 cooks + both recipes)
+- Weighted single scalar objective ~max_end * (horizon + 1) + (max_end - min_recipe_end)~
+  instead of MiniZinc's lexicographic ~++~ operator (which caused type errors with
+  ~var int~ on MiniZinc 2.9.3/Gecode)
+- One-indexed arrays in the MiniZinc model (native default) to avoid ~array1d~ coercion errors
+- Cook is NOT blocked during oven/rest tasks (=needs_cook= on each step):
+  physically accurate (set-and-forget), enables natural interleaving (e.g., GB prep
+  during LS bake)
+- Cooks are passed via ~--cook~ flags (~data/cooks/~)
+- Error boundary: ~color-eyre~ is intentionally restricted to ~src/bin/~
+  entrypoints so library functions (~src/io.rs~, ~src/schedule.rs~, etc.)
+  stay framework-agnostic and return typed ~Result~ types. This keeps the
+  library testable without ~color-eyre~ and prevents ~process::exit~ from
+  leaking into reusable code.
+
+* Data Conventions
+
+- Task IDs use ~{recipe_name}:{step_id}~ prefix (e.g., ~Lasagna:s1~); dependencies
+  reference these prefixed IDs
+- Step dependencies within a recipe file use un-prefixed IDs; the solver prepends
+  the recipe name at build time
+- ~data-depends-on~ HTML attribute uses ~, ~ (comma-space) as separator to
+  handle recipe names containing spaces
+- ~resource_kind~ on recipe steps uses equipment ~kind~ (e.g. ~oven~, ~burner~,
+  ~prep_surface~); the solver assigns each task to a specific equipment instance
+  matching that kind
+- ~needs_cook~ on recipe steps (defaults to ~true~) controls whether the step
+  occupies a cook. Set to ~false~ for oven baking, resting, thawing, cooling
+  — any step that doesn't need active cook attention
+- ~skill~ / ~min_skill_level~ / ~duration_by_skill~ on recipe steps enable
+  skill-adaptive durations; the solver assigns tasks to eligible cooks and
+  picks the best available duration for their skill level
+- ~temperature_celsius~ on recipe steps triggers automatic injection of a
+  pre-heat task. The pre-heat duration is computed from the fastest equipment
+  matching the step's ~resource_kind~; this is exact for single-oven kitchens,
+  and for multi-oven kitchens the solver naturally prefers the faster oven to
+  minimize makespan
+- ~data-start~ and ~data-cook~ HTML attributes on Gantt rows enable
+  client-side column sorting by start time or cook name
