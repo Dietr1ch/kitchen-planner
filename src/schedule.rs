@@ -15,6 +15,12 @@ pub enum ScheduleError {
 	NoSolution,
 }
 
+/// Given a Kitchen, a group of Cooks and some desired Recipes finds a plan
+/// to cook the recipes in such a way that,
+/// - We align the ends, so that every dish becomes ready at the same time.
+/// - We consider oven and grill preheating for steps with a target temperature.
+///   - There's extra preheating or cooldown steps so baking and grilling is repeatable.
+///   - And we avoid preheating until it's necessary.
 pub fn schedule(
 	kitchen: &Kitchen,
 	cooks: &[Cook],
