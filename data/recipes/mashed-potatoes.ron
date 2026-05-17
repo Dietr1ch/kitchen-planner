@@ -8,12 +8,12 @@
     (name: "Garlic", quantity: 2.0, unit: "piece", optional: true, alternatives: ["Garlic Powder"]),
   ],
   steps: [
-    (id: "s1", description: "Peel and chop potatoes", duration_minutes: 10, resource_kinds: ["prep_surface"], dependencies: [], optional: false,
+    (id: "s1", description: "Peel and chop potatoes", duration_minutes: 10, resource_kinds: ["prep_surface", "knife"], dependencies: [], optional: false,
       skill: Some("knife_work"), min_skill_level: Some(Novice),
       duration_by_skill: Some({ Unskilled: 15, Novice: 10, Intermediate: 8, Advanced: 7, Expert: 6 })),
     (id: "s2", description: "Boil potatoes in salted water", duration_minutes: 25, resource_kinds: ["burner", "pot"], dependencies: ["s1"], optional: false),
-    (id: "s3", description: "Drain potatoes", duration_minutes: 2, resource_kinds: ["sink"], dependencies: ["s2"], optional: false),
-    (id: "s4", description: "Mash with butter and milk", duration_minutes: 5, resource_kinds: ["prep_surface"], dependencies: ["s3"], optional: false),
+    (id: "s3", description: "Drain potatoes", duration_minutes: 2, resource_kinds: ["sink", "colander"], dependencies: ["s2"], optional: false),
+    (id: "s4", description: "Mash with butter and milk", duration_minutes: 5, resource_kinds: ["prep_surface", "mixing_bowl", "spoon"], dependencies: ["s3"], optional: false),
     (id: "s5", description: "Season to taste", duration_minutes: 2, resource_kinds: ["prep_surface"], dependencies: ["s4"], optional: true),
   ],
 )
