@@ -137,6 +137,18 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
 
 #error-msg { color: #e53935; text-align: center; margin: 0.5rem 0; font-size: 0.85rem; display: none; }
 
+/* Validation errors */
+.validation-errors {
+  background: #fff3e0; border: 1px solid #ffcc02; border-radius: 8px;
+  padding: 0.75rem 1rem; margin-bottom: 1rem; display: none;
+}
+.validation-errors ul {
+  margin: 0; padding-left: 1.25rem; list-style: disc;
+}
+.validation-errors li {
+  color: #bf360c; font-size: 0.85rem; line-height: 1.6;
+}
+
 @media (max-width: 700px) {
   .bar-container { min-width: 100px; }
   th, td { padding: 6px 8px; font-size: 0.78rem; }

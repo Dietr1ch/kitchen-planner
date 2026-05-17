@@ -1,3 +1,11 @@
+// @ts-check
+
+// Types Plan and Task are imported inline as needed.
+
+/**
+ * @param {string} name
+ * @returns {string | null}
+ */
 function cookColor(name) {
   if (name === '(none)') return null;
   var hash = 0;
@@ -9,10 +17,18 @@ function cookColor(name) {
   return 'hsl(' + hue + ', 60%, 50%)';
 }
 
+/**
+ * @param {unknown} s
+ * @returns {string}
+ */
 function escapeHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+/**
+ * @param {import("../bindings/Plan").Plan} plan
+ * @param {HTMLElement} container
+ */
 function renderGantt(plan, container) {
   container.innerHTML = '';
 
@@ -38,39 +54,46 @@ function renderGantt(plan, container) {
 
   // Column header click sorting
   table.querySelectorAll('th[data-sort]').forEach(function (th) {
-    th.addEventListener('click', function () {
-      renderBody(plan, this.dataset.sort);
+    /** @type {HTMLElement} */ (th).addEventListener('click', function () {
+      renderBody(plan, /** @type {HTMLElement} */ (this).dataset.sort || 'start');
     });
   });
 
   // Hover highlighting
   table.addEventListener('mouseover', function (e) {
-    var row = e.target.closest('tr[data-task-id]');
+    var target = /** @type {HTMLElement} */ (e.target);
+    var row = /** @type {HTMLElement | null} */ (target.closest('tr[data-task-id]'));
     if (!row) return;
-    var taskId = row.dataset.taskId;
+    var taskId = row.dataset.taskId || '';
     var deps = (row.dataset.dependsOn || '').split(/,\s*/).filter(Boolean);
-    deps.forEach(function (id) {
+    deps.forEach(function (/** @type {string} */ id) {
       var dep = document.querySelector('tr[data-task-id="' + id + '"]');
       if (dep) dep.classList.add('dep-upstream');
     });
     document.querySelectorAll('tr[data-depends-on]').forEach(function (other) {
-      var otherDeps = (other.dataset.dependsOn || '').split(/,\s*/).filter(Boolean);
-      if (otherDeps.indexOf(taskId) !== -1) other.classList.add('dep-downstream');
+      var otherEl = /** @type {HTMLElement} */ (other);
+      var otherDeps = (otherEl.dataset.dependsOn || '').split(/,\s*/).filter(Boolean);
+      if (otherDeps.indexOf(taskId) !== -1) otherEl.classList.add('dep-downstream');
     });
   });
   table.addEventListener('mouseout', function (e) {
-    var row = e.target.closest('tr[data-task-id]');
+    var target = /** @type {HTMLElement} */ (e.target);
+    var row = /** @type {HTMLElement | null} */ (target.closest('tr[data-task-id]'));
     if (!row) return;
     document.querySelectorAll('.dep-upstream, .dep-downstream').forEach(function (el) {
-      el.classList.remove('dep-upstream', 'dep-downstream');
+      /** @type {HTMLElement} */ (el).classList.remove('dep-upstream', 'dep-downstream');
     });
   });
 }
 
+/**
+ * @param {import("../bindings/Plan").Plan} plan
+ * @param {string} sortOrder
+ */
 function renderBody(plan, sortOrder) {
   var tasks = plan.tasks.slice();
   if (sortOrder === 'cook') {
-    tasks.sort(function (a, b) {
+    tasks.sort(function (/** @type {import("../bindings/Task").Task} */ a, /** @type {import("../bindings/Task").Task} */ b) {
       var ca = a.cook || '';
       var cb = b.cook || '';
       if (ca < cb) return -1;
@@ -78,21 +101,22 @@ function renderBody(plan, sortOrder) {
       return a.start_offset_minutes - b.start_offset_minutes;
     });
   } else {
-    tasks.sort(function (a, b) {
+    tasks.sort(function (/** @type {import("../bindings/Task").Task} */ a, /** @type {import("../bindings/Task").Task} */ b) {
       return a.start_offset_minutes - b.start_offset_minutes;
     });
   }
 
-  var totalDuration = tasks.reduce(function (max, t) {
+  var totalDuration = tasks.reduce(function (/** @type {number} */ max, /** @type {import("../bindings/Task").Task} */ t) {
     return Math.max(max, t.start_offset_minutes + t.duration_minutes);
   }, 0) || 1;
   var totalF = totalDuration;
 
+  /** @type {Record<string, number>} */
   var dishEnd = {};
   for (var i = 0; i < tasks.length; i++) {
     var t = tasks[i];
     var end = t.start_offset_minutes + t.duration_minutes;
-    if (!(t.dish in dishEnd) || end > dishEnd[t.dish]) dishEnd[t.dish] = end;
+    if (!(t.dish in dishEnd) || end > dishEnd[t.dish || '']) dishEnd[t.dish || ''] = end;
   }
 
   var rows = '';
@@ -101,7 +125,7 @@ function renderBody(plan, sortOrder) {
     var start = t.start_offset_minutes;
     var end = start + t.duration_minutes;
     var offsetPct = (start / totalF * 100).toFixed(0);
-    var widthPct = Math.max(1, (t.duration_minutes / totalF * 100).toFixed(0));
+    var widthPct = Math.max(1, Number((t.duration_minutes / totalF * 100).toFixed(0)));
     var barLabel = start + '\u2013' + end;
     var taskId = escapeHtml(t.id || '');
     var depIds = (t.dependencies || []).map(escapeHtml).join(', ');
@@ -120,7 +144,7 @@ function renderBody(plan, sortOrder) {
       ? '<span class="cook-badge" style="background:' + cookColorVal + ';">' + escapedCook + '</span>'
       : escapedCook;
 
-    var barClass = 'bar' + (end >= dishEnd[t.dish] ? ' bar-last' : '');
+    var barClass = 'bar' + (end >= dishEnd[t.dish || ''] ? ' bar-last' : '');
     rows += '<tr data-task-id="' + taskId + '" data-depends-on="' + depIds + '">'
       + '<td><div class="bar-container"><div class="' + barClass + '" style="margin-left:' + offsetPct + '%;width:' + widthPct + '%;" title="' + barLabel + '"></div></div></td>'
       + '<td>' + dish + '</td>'
@@ -130,5 +154,6 @@ function renderBody(plan, sortOrder) {
       + '</tr>\n';
   }
 
-  document.getElementById('ganttBody').innerHTML = rows;
+  var bodyEl = document.getElementById('ganttBody');
+  if (bodyEl) bodyEl.innerHTML = rows;
 }

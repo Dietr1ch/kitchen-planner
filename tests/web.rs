@@ -138,7 +138,16 @@ async fn plan_with_no_cooks_fails() {
 	});
 
 	let res = server.post("/api/plan").json(&payload).await;
-	res.assert_status_internal_server_error();
+	res.assert_status_bad_request();
+
+	let body: serde_json::Value = res.json();
+	let errors = body["errors"].as_array().unwrap();
+	assert!(
+		errors
+			.iter()
+			.any(|e| e["error_type"] == "no_cooks_for_task"),
+		"expected 'no_cooks_for_task' error"
+	);
 }
 
 #[tokio::test]
@@ -155,7 +164,71 @@ async fn plan_with_no_recipes_fails() {
 	});
 
 	let res = server.post("/api/plan").json(&payload).await;
-	res.assert_status_internal_server_error();
+	res.assert_status_bad_request();
+
+	let body: serde_json::Value = res.json();
+	let errors = body["errors"].as_array().unwrap();
+	assert!(
+		errors.iter().any(|e| e["error_type"] == "no_recipes"),
+		"expected 'no_recipes' error"
+	);
+}
+
+#[tokio::test]
+async fn plan_without_required_equipment_fails() {
+	let server = test_server();
+
+	let mut kitchen: Kitchen = io::read_ron_file("data/kitchens/simple.ron").unwrap();
+	// Remove all ovens so tasks needing one will fail
+	kitchen.equipment.retain(|e| e.kind != "oven");
+	let cooks: Vec<Cook> = io::read_ron_files(&["data/cooks/alice.ron"]).unwrap();
+	let recipes: Vec<Recipe> = io::read_ron_files(&["data/recipes/lasagna.ron"]).unwrap();
+
+	let payload = json!({
+		"kitchen": kitchen,
+		"cooks": cooks,
+		"recipes": recipes,
+	});
+
+	let res = server.post("/api/plan").json(&payload).await;
+	res.assert_status_bad_request();
+
+	let body: serde_json::Value = res.json();
+	let errors = body["errors"].as_array().unwrap();
+	assert!(
+		errors
+			.iter()
+			.any(|e| e["error_type"] == "missing_equipment_kind"),
+		"expected 'missing_equipment_kind' error"
+	);
+}
+
+#[tokio::test]
+async fn plan_with_unskilled_cooks_fails() {
+	let server = test_server();
+
+	let kitchen: Kitchen = io::read_ron_file("data/kitchens/simple.ron").unwrap();
+	// Bob has no knife_work skill, but Lasagna:s1 requires knife_work >= Novice
+	let cooks: Vec<Cook> = io::read_ron_files(&["data/cooks/bob.ron"]).unwrap();
+	let recipes: Vec<Recipe> = io::read_ron_files(&["data/recipes/lasagna.ron"]).unwrap();
+
+	let payload = json!({
+		"kitchen": kitchen,
+		"cooks": cooks,
+		"recipes": recipes,
+	});
+
+	let res = server.post("/api/plan").json(&payload).await;
+	res.assert_status_bad_request();
+
+	let body: serde_json::Value = res.json();
+	let errors = body["errors"].as_array().unwrap();
+	assert!(
+		errors
+			.iter()
+			.any(|e| e["error_type"] == "cook_skill_insufficient"),
+		"expected 'cook_skill_insufficient' error"
+	);
 }
 
 #[tokio::test]

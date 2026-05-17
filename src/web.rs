@@ -129,6 +129,14 @@ async fn plan_handler(
 	let cooks = req.cooks;
 	let recipes = req.recipes;
 
+	let errors = crate::validate::validate(&kitchen, &cooks, &recipes);
+	if !errors.is_empty() {
+		return (
+			StatusCode::BAD_REQUEST,
+			serde_json::json!({"errors": errors}).to_string(),
+		);
+	}
+
 	let result =
 		tokio::task::spawn_blocking(move || crate::schedule::schedule(&kitchen, &cooks, &recipes))
 			.await;

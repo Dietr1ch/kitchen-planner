@@ -3,7 +3,8 @@
     "checkJs": true,
     "allowJs": true,
     "noEmit": true,
-    "strict": true
+    "strict": true,
+    "lib": ["dom", "ES2017"]
   },
   "include": ["assets/**/*.js", "bindings/**/*.js"]
 }
