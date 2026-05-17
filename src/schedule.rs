@@ -9,530 +9,495 @@ use crate::models::kitchen::Kitchen;
 use crate::models::plan::{Plan, Task};
 use crate::models::recipe::Recipe;
 
+/// Errors from the scheduling pipeline.
 #[derive(Debug, thiserror::Error)]
 pub enum ScheduleError {
+	/// Wrapper for `std::io::Error` from solver subprocess I/O.
 	#[error("failed to create or write model file")]
 	IO(#[from] std::io::Error),
+	/// The solver subprocess exited with a non-zero status (not UNSAT).
 	#[error("solver failed: {0}")]
 	SolverFailure(String),
+	/// The problem is provably unsatisfiable given the inputs.
+	#[error("Unfeasible problem: {0}")]
+	Unfeasible(String),
+	/// The solver produced no solution (could be timeout or empty output).
 	#[error("no solution found from solver")]
 	NoSolution,
 }
 
-#[allow(clippy::too_many_arguments)]
-fn build_model(
-	durations: &[u32],
-	needs_cook_arr: &[bool],
-	recipe_of: &[usize],
-	deps_from: &[usize],
-	deps_to: &[usize],
-	num_cooks: usize,
-	num_recipes: usize,
-	horizon: u32,
-	num_equipment: usize,
-	num_kinds: usize,
-	equip_kind: &[usize],
-	task_kinds_flat: &[usize],
-	max_resources: usize,
-	num_resources: &[usize],
-	kind_start: &[usize],
-	kind_end: &[usize],
-	eff_duration: &[Vec<u32>],
-	num_skills: usize,
-	cook_skill_level: &[Vec<usize>],
-	required_skill: &[usize],
-	min_level: &[usize],
-	preheat_indices: &[usize],
-	preheat_bake_indices: &[usize],
-) -> String {
-	let num_tasks = durations.len();
-	let num_deps = deps_from.len();
+const MODEL: &str = include_str!("model.mzn");
 
-	let mut m = String::new();
-	m.push_str(&format!("int: num_tasks = {};\n", num_tasks));
-	m.push_str(&format!("int: horizon = {};\n", horizon));
-	m.push_str(&format!("int: num_cooks = {};\n", num_cooks));
-	m.push_str(&format!("int: num_recipes = {};\n", num_recipes));
-	m.push_str(&format!("int: num_deps = {};\n", num_deps));
-	m.push_str(&format!("int: num_equipment = {};\n", num_equipment));
-	m.push_str(&format!("int: num_kinds = {};\n", num_kinds));
-	m.push_str(&format!("int: num_skills = {};\n", num_skills));
+/// A single task extracted from a recipe step, possibly with pre-heat injection.
+struct TaskData {
+	/// Unique ID like `"Lasagna:s1"` or `"oven:preheat:180"`.
+	id: String,
+	/// Human-readable description.
+	description: String,
+	/// Base duration in minutes (overridden by `duration_by_skill`).
+	duration_minutes: u32,
+	/// Equipment kinds this task needs (e.g. `["oven"]`).
+	resource_kinds: Vec<String>,
+	/// IDs of tasks that must finish before this one starts.
+	dependencies: Vec<String>,
+	/// Index into the original recipes slice (0-based).
+	recipe_idx: usize,
+	/// Whether this task occupies a cook.
+	needs_cook: bool,
+	/// Skill-level → duration overrides (if the task requires a skill).
+	duration_by_skill: Option<HashMap<SkillLevel, u32>>,
+	/// Name of the skill this task requires (if any).
+	skill: Option<String>,
+	/// Minimum skill level the assigned cook must have.
+	min_skill_level: Option<SkillLevel>,
+	/// Target temperature for baking (triggers pre-heat injection).
+	temperature_celsius: Option<u16>,
+}
 
-	m.push_str("array[1..num_tasks] of int: duration = [");
-	for (i, d) in durations.iter().enumerate() {
-		if i > 0 {
-			m.push_str(", ");
-		}
-		m.push_str(&d.to_string());
+/// Builder for MiniZinc DZN (data) format text.
+struct DznWriter {
+	content: String,
+}
+
+impl DznWriter {
+	fn new() -> Self {
+		DznWriter { content: String::new() }
 	}
-	m.push_str("];\n");
 
-	let eff_flat: Vec<String> = eff_duration
-		.iter()
-		.flat_map(|row| row.iter())
-		.map(|v| v.to_string())
-		.collect();
-	m.push_str(&format!(
-		"array[0..num_cooks, 1..num_tasks] of int: eff_duration = array2d(0..num_cooks, 1..num_tasks, [{}]);\n",
-		eff_flat.join(", "),
-	));
-
-	m.push_str("array[1..num_tasks] of var 0..horizon: actual_duration;\n");
-	m.push_str("constraint forall(t in 1..num_tasks)(\n");
-	m.push_str(
-		"  actual_duration[t] = if needs_cook[t] then eff_duration[cook[t], t] else duration[t] endif\n",
-	);
-	m.push_str(");\n");
-
-	m.push_str("array[1..num_equipment] of int: equip_kind = [");
-	for (i, k) in equip_kind.iter().enumerate() {
-		if i > 0 {
-			m.push_str(", ");
-		}
-		m.push_str(&k.to_string());
+	/// Append a scalar parameter: `name = value;`
+	fn param(&mut self, name: &str, value: impl std::fmt::Display) {
+		self.content.push_str(&format!("{} = {};\n", name, value));
 	}
-	m.push_str("];\n");
 
-	m.push_str(&format!("int: max_resources = {};\n", max_resources));
-	m.push_str("array[1..num_tasks] of int: num_resources = [");
-	for (i, n) in num_resources.iter().enumerate() {
-		if i > 0 {
-			m.push_str(", ");
-		}
-		m.push_str(&n.to_string());
-	}
-	m.push_str("];\n");
-
-	let task_kinds_2d: Vec<String> = task_kinds_flat
-		.iter()
-		.map(|v| {
-			match v {
-				0 => "0".to_string(),
-				k => k.to_string(),
-			}
-		})
-		.collect();
-	m.push_str(&format!(
-		"array[1..num_tasks, 1..max_resources] of int: task_kinds = array2d(1..num_tasks, 1..max_resources, [{}]);\n",
-		task_kinds_2d.join(", "),
-	));
-
-	m.push_str(&format!(
-		"array[1..num_kinds] of int: kind_start = [{}];\n",
-		kind_start[1..]
-			.iter()
-			.map(|v| v.to_string())
-			.collect::<Vec<_>>()
-			.join(", ")
-	));
-	m.push_str(&format!(
-		"array[1..num_kinds] of int: kind_end = [{}];\n",
-		kind_end[1..]
-			.iter()
-			.map(|v| v.to_string())
-			.collect::<Vec<_>>()
-			.join(", ")
-	));
-
-	m.push_str("array[1..num_tasks] of bool: needs_cook = [");
-	for (i, n) in needs_cook_arr.iter().enumerate() {
-		if i > 0 {
-			m.push_str(", ");
-		}
-		m.push_str(if *n { "true" } else { "false" });
-	}
-	m.push_str("];\n");
-
-	m.push_str("array[1..num_tasks] of int: recipe_of = [");
-	for (i, r) in recipe_of.iter().enumerate() {
-		if i > 0 {
-			m.push_str(", ");
-		}
-		m.push_str(&(r + 1).to_string());
-	}
-	m.push_str("];\n");
-
-	m.push_str(&format!("int: num_preheats = {};\n", preheat_indices.len()));
-	m.push_str("array[1..num_preheats] of int: preheat_tasks = [");
-	for (i, &idx) in preheat_indices.iter().enumerate() {
-		if i > 0 {
-			m.push_str(", ");
-		}
-		m.push_str(&(idx + 1).to_string());
-	}
-	m.push_str("];\n");
-	m.push_str("array[1..num_preheats] of int: preheat_bakes = [");
-	for (i, &idx) in preheat_bake_indices.iter().enumerate() {
-		if i > 0 {
-			m.push_str(", ");
-		}
-		m.push_str(&(idx + 1).to_string());
-	}
-	m.push_str("];\n");
-
-	m.push_str("array[1..num_deps] of int: deps_from = [");
-	for (i, v) in deps_from.iter().enumerate() {
-		if i > 0 {
-			m.push_str(", ");
-		}
-		m.push_str(&(v + 1).to_string());
-	}
-	m.push_str("];\n");
-
-	m.push_str("array[1..num_deps] of int: deps_to = [");
-	for (i, v) in deps_to.iter().enumerate() {
-		if i > 0 {
-			m.push_str(", ");
-		}
-		m.push_str(&(v + 1).to_string());
-	}
-	m.push_str("];\n");
-
-	{
-		let flat: Vec<String> = cook_skill_level
-			.iter()
-			.flat_map(|row| row[1..].iter())
-			.map(|v| v.to_string())
-			.collect();
-		m.push_str(&format!(
-			"array[0..num_cooks, 1..num_skills] of int: cook_skill_level = array2d(0..num_cooks, 1..num_skills, [{}]);\n",
-			flat.join(", "),
+	/// Append a 1-D integer array: `name = [v1, v2, ...];`
+	fn int_array(&mut self, name: &str, values: &[i64]) {
+		self.content.push_str(&format!(
+			"{} = [{}];\n",
+			name,
+			values
+				.iter()
+				.map(|v| v.to_string())
+				.collect::<Vec<_>>()
+				.join(", ")
 		));
 	}
 
-	m.push_str("array[1..num_tasks] of int: required_skill = [");
-	for (i, &s) in required_skill.iter().enumerate() {
-		if i > 0 {
-			m.push_str(", ");
-		}
-		m.push_str(&s.to_string());
+	/// Append a 1-D boolean array: `name = [true, false, ...];`
+	fn bool_array(&mut self, name: &str, values: &[bool]) {
+		self.content.push_str(&format!(
+			"{} = [{}];\n",
+			name,
+			values
+				.iter()
+				.map(|v| if *v { "true" } else { "false" })
+				.collect::<Vec<_>>()
+				.join(", ")
+		));
 	}
-	m.push_str("];\n");
 
-	m.push_str("array[1..num_tasks] of int: min_level = [");
-	for (i, &l) in min_level.iter().enumerate() {
-		if i > 0 {
-			m.push_str(", ");
-		}
-		m.push_str(&l.to_string());
+	/// Append a 2-D integer array using `array2d(rlo..rhi, clo..chi, [...])`.
+	fn int_array2d(
+		&mut self,
+		name: &str,
+		rlo: usize,
+		rhi: usize,
+		clo: usize,
+		chi: usize,
+		values: &[i64],
+	) {
+		self.content.push_str(&format!(
+			"{} = array2d({}..{}, {}..{}, [{}]);\n",
+			name,
+			rlo,
+			rhi,
+			clo,
+			chi,
+			values
+				.iter()
+				.map(|v| v.to_string())
+				.collect::<Vec<_>>()
+				.join(", ")
+		));
 	}
-	m.push_str("];\n");
-
-	m.push_str("\
-array[1..num_tasks] of var 0..horizon: start;
-array[1..num_tasks] of var 0..num_cooks: cook;
-array[1..num_tasks, 1..max_resources] of var 0..num_equipment: assign;
-
-constraint forall(i in 1..num_deps)(
-  start[deps_to[i]] >= start[deps_from[i]] + actual_duration[deps_from[i]]
-);
-
-constraint forall(i in 1..num_tasks, j in 1..num_tasks where i < j, ri in 1..max_resources, rj in 1..max_resources)(
-  (assign[i, ri] > 0 /\\ assign[i, ri] = assign[j, rj]) ->
-  (start[i] + actual_duration[i] <= start[j] \\/ start[j] + actual_duration[j] <= start[i])
-);
-
-constraint forall(t in 1..num_tasks, r in 1..max_resources where task_kinds[t, r] > 0)(
-  assign[t, r] >= kind_start[task_kinds[t, r]] /\\ assign[t, r] <= kind_end[task_kinds[t, r]]
-);
-constraint forall(t in 1..num_tasks, r in 1..max_resources where task_kinds[t, r] == 0)(
-  assign[t, r] == 0
-);
-
-
-
-constraint forall(i in 1..num_tasks where needs_cook[i])(cook[i] > 0);
-constraint forall(i in 1..num_tasks where not needs_cook[i])(cook[i] = 0);
-
-constraint forall(i in 1..num_tasks, j in 1..num_tasks where i < j /\\ needs_cook[i] /\\ needs_cook[j] /\\ cook[i] = cook[j])(
-  start[i] + actual_duration[i] <= start[j] \\/ start[j] + actual_duration[j] <= start[i]
-);
-
-constraint forall(t in 1..num_tasks where required_skill[t] > 0)(
-  cook_skill_level[cook[t], required_skill[t]] >= min_level[t]
-);
-
-array[1..num_recipes] of var 0..horizon: recipe_end;
-constraint forall(r in 1..num_recipes)(
-  recipe_end[r] = max([start[t] + actual_duration[t] | t in 1..num_tasks where recipe_of[t] = r])
-);
-
-var 0..horizon: max_end = max(recipe_end);
-var 0..horizon: min_recipe_end = min(recipe_end);
-
-var 0..horizon: total_waste = if num_preheats > 0 then sum(p in 1..num_preheats)(start[preheat_bakes[p]] - (start[preheat_tasks[p]] + actual_duration[preheat_tasks[p]])) else 0 endif;
-
-solve minimize max_end * (horizon + 1) * (1 + num_preheats) + (max_end - min_recipe_end) * (1 + num_preheats) + total_waste;
-
-output [\"start = \", show(start), \";\\ncook = \", show(cook), \";\\nassign = \", show([assign[t, r] | t in 1..num_tasks, r in 1..max_resources]), \";\\n\"];");
-
-	m
 }
 
+/// Build and solve a MiniZinc scheduling problem.
+///
+/// Expands recipes into task lists, injects pre-heat tasks, constructs the
+/// DZN data block, spawns `minizinc --solver gecode`, and parses the
+/// JSON-stream output into a [`Plan`].
 pub fn schedule(
 	kitchen: &Kitchen,
 	cooks: &[Cook],
 	recipes: &[Recipe],
 ) -> Result<Plan, ScheduleError> {
-	let num_recipes = recipes.len();
-
-	let mut tasks = Vec::new();
-	let mut id_to_idx: HashMap<String, usize> = HashMap::new();
-
-	for (ri, recipe) in recipes.iter().enumerate() {
-		for step in &recipe.steps {
-			let tid = format!("{}:{}", recipe.name, step.id);
-			let deps: Vec<String> = step
-				.dependencies
-				.iter()
-				.map(|d| format!("{}:{}", recipe.name, d))
-				.collect();
-			let idx = tasks.len();
-			id_to_idx.insert(tid.clone(), idx);
-			tasks.push(TaskData {
-				id: tid,
-				description: step.description.clone(),
-				duration_minutes: step.duration_minutes,
-				resource_kinds: step.resource_kinds.clone(),
-				dependencies: deps,
-				recipe_idx: ri,
-				needs_cook: step.needs_cook,
-				duration_by_skill: step.duration_by_skill.clone(),
-				skill: step.skill.clone(),
-				min_skill_level: step.min_skill_level,
-				temperature_celsius: step.temperature_celsius,
-			});
-		}
+	let (tasks, preheat_pairs) = expand_tasks(recipes, kitchen);
+	let num_tasks = tasks.len();
+	if num_tasks == 0 {
+		return Err(ScheduleError::Unfeasible("no tasks to schedule".into()));
 	}
 
-	// Inject pre-heat tasks — one per distinct temperature per equipment kind.
-	// Pre-heats on the same kind are chained (lower temp → higher temp) so each
-	// duration is computed from the delta to the previous temp, not from ambient.
-	// A bake step at temp T depends on the pre-heat at temp T.
-	// Baking at a hotter temp than required risks overcooking, so each temp level
-	// gets its own pre-heat rather than sharing one max-temp pre-heat.
-	let mut kind_temps: HashMap<String, Vec<u16>> = HashMap::new();
-	let mut temp_to_bakes: HashMap<(String, u16), Vec<usize>> = HashMap::new();
-	for (i, task) in tasks.iter().enumerate() {
-		if let Some(temp) = task.temperature_celsius
-			&& let Some(kind) = task.resource_kinds.first()
-		{
-			kind_temps.entry(kind.clone()).or_default().push(temp);
-			temp_to_bakes.entry((kind.clone(), temp)).or_default().push(i);
-		}
-	}
-	let mut preheat_pairs: Vec<(usize, usize)> = Vec::new();
-	for (kind, temps) in &kind_temps {
-		let min_rate = kitchen
-			.equipment
-			.iter()
-			.filter(|e| e.kind == *kind)
-			.map(|e| e.preheat_rate_minutes_per_celsius)
-			.fold(f64::INFINITY, f64::min);
-		if min_rate <= 0.0 || !min_rate.is_finite() {
-			continue;
-		}
-		let mut unique_temps: Vec<u16> = temps.clone();
-		unique_temps.sort();
-		unique_temps.dedup();
-		let mut prev_temp = kitchen.ambient_temperature_celsius as u16;
-		let mut prev_preheat_id: Option<String> = None;
-		for &temp in &unique_temps {
-			let delta = (temp as f64 - prev_temp as f64).max(0.0);
-			let duration = (min_rate * delta).round() as u32;
-			let preheat_id = format!("{}:preheat:{}", kind, temp);
-			let mut deps = Vec::new();
-			if let Some(ref prev_id) = prev_preheat_id {
-				deps.push(prev_id.clone());
-			}
-			let bake_idx = temp_to_bakes[&(kind.clone(), temp)][0];
-			let preheat_task = TaskData {
-				id: preheat_id.clone(),
-				description: format!("Pre-heat {} to {}°C", kind, temp),
-				duration_minutes: duration,
-				resource_kinds: vec![kind.clone()],
-				dependencies: deps,
-				recipe_idx: tasks[bake_idx].recipe_idx,
-				needs_cook: false,
-				duration_by_skill: None,
-				skill: None,
-				min_skill_level: None,
-				temperature_celsius: None,
-			};
-			let idx = tasks.len();
-			id_to_idx.insert(preheat_id.clone(), idx);
-			tasks.push(preheat_task);
-			for &bi in &temp_to_bakes[&(kind.clone(), temp)] {
-				tasks[bi].dependencies.push(preheat_id.clone());
-				preheat_pairs.push((idx, bi));
-			}
-			prev_temp = temp;
-			prev_preheat_id = Some(preheat_id);
-		}
-	}
+	let id_to_idx: HashMap<String, usize> = tasks
+		.iter()
+		.enumerate()
+		.map(|(i, t)| (t.id.clone(), i))
+		.collect();
 
 	let equipment: Vec<EquipInfo> = kitchen
 		.equipment
 		.iter()
-		.map(|e| EquipInfo {
-			name: e.name.clone(),
-			kind: e.kind.clone(),
-		})
+		.map(|e| EquipInfo { name: e.name.clone(), kind: e.kind.clone() })
 		.collect();
 	let num_equipment = equipment.len();
 
-	let mut kind_to_int: HashMap<&str, usize> = HashMap::new();
-	for eq in &equipment {
-		let len = kind_to_int.len();
-		kind_to_int.entry(eq.kind.as_str()).or_insert(len + 1);
-	}
-	let num_kinds = kind_to_int.len();
+	let (kind_to_idx, equip_kind) = build_equip_kind_mapping(&equipment);
+	let num_kinds = kind_to_idx.len();
 
-	let equip_kind: Vec<usize> = equipment
-		.iter()
-		.map(|eq| kind_to_int[eq.kind.as_str()])
-		.collect();
+	let (kind_start, kind_end) = build_kind_ranges(&equip_kind, num_kinds);
 
-	let mut kind_start = vec![num_equipment + 1; num_kinds + 1];
-	let mut kind_end = vec![0usize; num_kinds + 1];
-	for (i, &k) in equip_kind.iter().enumerate() {
-		let idx = i + 1;
-		if idx < kind_start[k] {
-			kind_start[k] = idx;
-		}
-		if idx > kind_end[k] {
-			kind_end[k] = idx;
-		}
-	}
-
-	let task_kinds: Vec<Vec<usize>> = tasks
-		.iter()
-		.map(|t| {
-			t.resource_kinds
-				.iter()
-				.map(|k| kind_to_int.get(k.as_str()).copied().unwrap_or(0))
-				.collect()
-		})
-		.collect();
+	let task_kinds: Vec<Vec<usize>> = build_task_kinds(&tasks, &kind_to_idx);
 	let max_resources = task_kinds.iter().map(|v| v.len()).max().unwrap_or(0);
-	let num_resources: Vec<usize> = task_kinds.iter().map(|v| v.len()).collect();
-	// Flatten 2D task_kinds to 1D for MiniZinc (row-major), padding with 0s
-	let task_kinds_flat: Vec<usize> = task_kinds
+	let task_kinds_flat: Vec<i64> = task_kinds
 		.iter()
 		.flat_map(|v| {
 			let mut padded = v.clone();
 			padded.resize(max_resources, 0);
-			padded
+			padded.into_iter().map(|x| x as i64)
 		})
 		.collect();
 
-	let mut deps_from = Vec::new();
-	let mut deps_to = Vec::new();
-	let mut encountered_deps = HashSet::new();
-	for task in &tasks {
-		let task_idx = id_to_idx[&task.id];
-		for dep_id in &task.dependencies {
-			if let Some(&dep_idx) = id_to_idx.get(dep_id)
-				&& encountered_deps.insert((dep_idx, task_idx))
-			{
-				deps_from.push(dep_idx);
-				deps_to.push(task_idx);
-			}
-		}
-	}
+	let (deps_from, deps_to) = build_dependencies(&tasks, &id_to_idx);
+
+	let durations: Vec<i64> = tasks.iter().map(|t| t.duration_minutes as i64).collect();
+	let needs_cook_arr: Vec<bool> = tasks.iter().map(|t| t.needs_cook).collect();
+	let recipe_of: Vec<i64> = tasks.iter().map(|t| (t.recipe_idx + 1) as i64).collect();
 
 	let num_cooks = cooks.len();
-	let horizon: u32 = tasks.iter().map(|t| t.duration_minutes).sum();
+	let num_recipes = recipes.len();
+	let horizon: u32 = tasks.iter().map(|t| t.duration_minutes).sum::<u32>() * 2;
 
-	let durations: Vec<u32> = tasks.iter().map(|t| t.duration_minutes).collect();
-	let needs_cook_arr: Vec<bool> = tasks.iter().map(|t| t.needs_cook).collect();
-	let recipe_of: Vec<usize> = tasks.iter().map(|t| t.recipe_idx).collect();
+	let (_skill_to_idx, num_skills, required_skill, min_level, cook_skill_level) =
+		build_skill_data(&tasks, cooks);
 
-	// Collect unique skill names referenced by recipe steps
-	let mut skill_to_idx: HashMap<&str, usize> = HashMap::new();
-	for task in &tasks {
-		if let Some(ref skill_name) = task.skill {
-			let len = skill_to_idx.len();
-			skill_to_idx.entry(skill_name).or_insert(len + 1);
-		}
-	}
-	let num_skills = skill_to_idx.len();
+	let eff_duration = compute_effective_durations(&tasks, cooks, &required_skill, &cook_skill_level);
 
-	// Build cook-skill matrix: cook_skill_level[c][s] = numeric level (0..=4)
-	let mut cook_skill_level = vec![vec![0usize; num_skills + 1]; num_cooks + 1];
-	for (ci, cook) in cooks.iter().enumerate() {
-		let c = ci + 1;
-		for (skill_name, level) in &cook.skills {
-			if let Some(&si) = skill_to_idx.get(skill_name.as_str()) {
-				cook_skill_level[c][si] = *level as u8 as usize;
-			}
-		}
-	}
+	let preheat_tasks: Vec<i64> =
+		preheat_pairs.iter().map(|p| (p.preheat_idx + 1) as i64).collect();
+	let preheat_bakes: Vec<i64> =
+		preheat_pairs.iter().map(|p| (p.bake_idx + 1) as i64).collect();
+	let num_preheats = preheat_pairs.len();
 
-	// Per-task skill arrays
-	let required_skill: Vec<usize> = tasks
-		.iter()
-		.map(|t| {
-			t.skill
-				.as_deref()
-				.and_then(|s| skill_to_idx.get(s).copied())
-				.unwrap_or(0)
-		})
-		.collect();
-
-	let min_level: Vec<usize> = tasks
-		.iter()
-		.map(|t| t.min_skill_level.map(|l| l as u8 as usize).unwrap_or(0))
-		.collect();
-
-	// Pre-compute effective durations per (cook, task) pair
-	let num_tasks = tasks.len();
-	let mut eff_duration = vec![vec![0u32; num_tasks]; num_cooks + 1];
-	for c in 0..=num_cooks {
-		for (t, task) in tasks.iter().enumerate() {
-			if c == 0 {
-				eff_duration[c][t] = task.duration_minutes;
-			} else if let Some(ref map) = task.duration_by_skill {
-				let si = required_skill[t];
-				let level = SkillLevel::iter()
-					.nth(cook_skill_level[c][si])
-					.expect("valid skill level index");
-				eff_duration[c][t] =
-					duration_for_skill(map, level).unwrap_or(task.duration_minutes);
-			} else {
-				eff_duration[c][t] = task.duration_minutes;
-			}
-		}
-	}
-
-	let preheat_indices: Vec<usize> = preheat_pairs.iter().map(|&(p, _)| p).collect();
-	let preheat_bake_indices: Vec<usize> = preheat_pairs.iter().map(|&(_, b)| b).collect();
-	let model = build_model(
+	let dzn = build_dzn(
+		num_tasks,
+		horizon,
+		num_cooks,
+		num_recipes,
+		deps_from.len(),
+		num_equipment,
+		num_kinds,
+		max_resources,
+		num_skills,
+		num_preheats,
 		&durations,
 		&needs_cook_arr,
 		&recipe_of,
 		&deps_from,
 		&deps_to,
-		num_cooks,
-		num_recipes,
-		horizon,
-		num_equipment,
-		num_kinds,
 		&equip_kind,
 		&task_kinds_flat,
-		max_resources,
-		&num_resources,
 		&kind_start,
 		&kind_end,
 		&eff_duration,
-		num_skills,
 		&cook_skill_level,
 		&required_skill,
 		&min_level,
-		&preheat_indices,
-		&preheat_bake_indices,
+		&preheat_tasks,
+		&preheat_bakes,
 	);
 
+	let model_input = format!("{}\n{}", MODEL, dzn);
+	let solution = run_solver(&model_input)?;
+
+	parse_solution(&solution, &tasks, &id_to_idx, cooks, &equipment, max_resources, &durations, &eff_duration, &needs_cook_arr)
+}
+
+/// Equipment item with its kind string, used for index-mapping.
+struct EquipInfo {
+	name: String,
+	kind: String,
+}
+
+/// Map equipment kind strings to 1-based indices and produce the
+/// `equip_kind` array used by the MiniZinc model.
+fn build_equip_kind_mapping(equipment: &[EquipInfo]) -> (HashMap<String, usize>, Vec<i64>) {
+	let mut kind_to_idx: HashMap<String, usize> = HashMap::new();
+	for eq in equipment {
+		let len = kind_to_idx.len();
+		kind_to_idx.entry(eq.kind.clone()).or_insert(len + 1);
+	}
+	let num_kinds = kind_to_idx.len();
+	let equip_kind: Vec<i64> = equipment
+		.iter()
+		.map(|eq| {
+			let k = kind_to_idx[&eq.kind] as i64;
+			debug_assert!(k >= 1 && k as usize <= num_kinds, "equipment kind {} out of range 1..{}", k, num_kinds);
+			k
+		})
+		.collect();
+	(kind_to_idx, equip_kind)
+}
+
+/// Compute `kind_start` and `kind_end` arrays — contiguous index ranges
+/// for each equipment kind.
+fn build_kind_ranges(equip_kind: &[i64], num_kinds: usize) -> (Vec<i64>, Vec<i64>) {
+	let mut kind_start = vec![i64::MAX; num_kinds];
+	let mut kind_end = vec![i64::MIN; num_kinds];
+	for (i, &k) in equip_kind.iter().enumerate() {
+		let kind = (k - 1) as usize;
+		debug_assert!(kind < num_kinds, "kind index {} out of range 0..{}", kind, num_kinds);
+		let pos = (i + 1) as i64;
+		if pos < kind_start[kind] {
+			kind_start[kind] = pos;
+		}
+		if pos > kind_end[kind] {
+			kind_end[kind] = pos;
+		}
+	}
+	for k in 0..num_kinds {
+		if kind_start[k] == i64::MAX {
+			kind_start[k] = 0;
+		}
+		if kind_end[k] == i64::MIN {
+			kind_end[k] = 0;
+		}
+		debug_assert!(kind_start[k] <= kind_end[k], "kind {} has empty range ({}..{})", k, kind_start[k], kind_end[k]);
+	}
+	(kind_start, kind_end)
+}
+
+/// Map each task's `resource_kinds` to kind indices (0 = unknown/unused).
+fn build_task_kinds(tasks: &[TaskData], kind_to_idx: &HashMap<String, usize>) -> Vec<Vec<usize>> {
+	tasks
+		.iter()
+		.map(|t| {
+			t.resource_kinds
+				.iter()
+				.map(|k| kind_to_idx.get(k.as_str()).copied().unwrap_or(0))
+				.collect()
+		})
+		.collect()
+}
+
+/// Build 1-indexed (from, to) dependency edge arrays, skipping missing
+/// dependency IDs and deduplicating edges.
+fn build_dependencies(
+	tasks: &[TaskData],
+	id_to_idx: &HashMap<String, usize>,
+) -> (Vec<i64>, Vec<i64>) {
+	let num_tasks = tasks.len();
+	let mut deps_from = Vec::new();
+	let mut deps_to = Vec::new();
+	let mut seen = HashSet::new();
+	for task in tasks {
+		let task_idx = id_to_idx[&task.id];
+		debug_assert!(task_idx < num_tasks);
+		for dep_id in &task.dependencies {
+			if let Some(&dep_idx) = id_to_idx.get(dep_id)
+				&& seen.insert((dep_idx, task_idx))
+			{
+				debug_assert!(dep_idx < num_tasks);
+				deps_from.push((dep_idx + 1) as i64);
+				deps_to.push((task_idx + 1) as i64);
+			}
+		}
+	}
+	debug_assert!(deps_from.iter().all(|&f| f >= 1 && f as usize <= num_tasks));
+	debug_assert!(deps_to.iter().all(|&t| t >= 1 && t as usize <= num_tasks));
+	(deps_from, deps_to)
+}
+
+#[allow(clippy::type_complexity)]
+/// Build skill index mapping, required-skill / min-level arrays, and the
+/// `cook_skill_level` matrix. Returns `(skill_to_idx, num_skills, required_skill, min_level, cook_skill_level)`.
+fn build_skill_data(
+	tasks: &[TaskData],
+	cooks: &[Cook],
+) -> (HashMap<String, usize>, usize, Vec<i64>, Vec<i64>, Vec<Vec<i64>>) {
+	let mut skill_to_idx: HashMap<String, usize> = HashMap::new();
+	for task in tasks {
+		if let Some(ref skill_name) = task.skill {
+			let len = skill_to_idx.len();
+			skill_to_idx.entry(skill_name.clone()).or_insert(len + 1);
+		}
+	}
+	let num_skills = skill_to_idx.len();
+
+	let required_skill: Vec<i64> = tasks
+		.iter()
+		.map(|t| {
+			t.skill
+				.as_deref()
+				.and_then(|s| skill_to_idx.get(s).copied())
+				.map(|v| v as i64)
+				.unwrap_or(-1)
+		})
+		.collect();
+
+	for (t, &sk) in required_skill.iter().enumerate() {
+		debug_assert!(sk == -1 || (sk >= 1 && sk as usize <= num_skills),
+			"task {} skill index {} out of range 1..{}", t, sk, num_skills);
+	}
+
+	let min_level: Vec<i64> = tasks
+		.iter()
+		.map(|t| t.min_skill_level.map(|l| l as u8 as i64).unwrap_or(0))
+		.collect();
+
+    debug_assert!(min_level.iter().all(|&l| (0..=4).contains(&l)), "min_level out of range 0..4");
+
+	let num_cooks = cooks.len();
+	let mut cook_skill_level = vec![vec![0i64; num_skills.max(1)]; num_cooks + 1];
+	for (ci, cook) in cooks.iter().enumerate() {
+		let c = ci + 1;
+		for (skill_name, level) in &cook.skills {
+			if let Some(&si) = skill_to_idx.get(skill_name) {
+				debug_assert!(si >= 1 && si <= num_skills, "skill index {} out of range 1..{}", si, num_skills);
+				cook_skill_level[c][si - 1] = *level as u8 as i64;
+			}
+		}
+	}
+
+	debug_assert!(cook_skill_level.len() == num_cooks + 1);
+	debug_assert!(cook_skill_level.iter().all(|row| row.len() == num_skills.max(1)));
+
+	(skill_to_idx, num_skills, required_skill, min_level, cook_skill_level)
+}
+
+/// Pre-compute the `eff_duration[cook, task]` matrix for all cook-task
+/// pairs using skill-level fallback logic.
+fn compute_effective_durations(
+	tasks: &[TaskData],
+	cooks: &[Cook],
+	required_skill: &[i64],
+	cook_skill_level: &[Vec<i64>],
+) -> Vec<Vec<i64>> {
+	let num_tasks = tasks.len();
+	let num_cooks = cooks.len();
+	let mut eff_duration = vec![vec![0i64; num_tasks]; num_cooks + 1];
+	debug_assert!(required_skill.len() == num_tasks);
+
+	for c in 0..=num_cooks {
+		for (t, task) in tasks.iter().enumerate() {
+			if c == 0 {
+				eff_duration[c][t] = task.duration_minutes as i64;
+			} else if let Some(ref map) = task.duration_by_skill {
+				let si = required_skill[t];
+				if si < 0 {
+					eff_duration[c][t] = task.duration_minutes as i64;
+				} else {
+					let si_u = (si - 1) as usize;
+					debug_assert!(si_u < cook_skill_level[c].len(),
+						"cook {} skill index {} out of range 0..{}", c, si_u, cook_skill_level[c].len());
+					let level = SkillLevel::iter()
+						.nth(cook_skill_level[c][si_u] as usize)
+						.expect("valid skill level index");
+					eff_duration[c][t] =
+						duration_for_skill(map, level).unwrap_or(task.duration_minutes) as i64;
+				}
+			} else {
+				eff_duration[c][t] = task.duration_minutes as i64;
+			}
+		}
+	}
+
+	debug_assert!(eff_duration.len() == num_cooks + 1);
+	debug_assert!(eff_duration.iter().all(|row| row.len() == num_tasks));
+	debug_assert!(eff_duration.iter().all(|row| row.iter().all(|&v| v > 0)));
+
+	eff_duration
+}
+
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+/// Serialise all scheduling parameters into MiniZinc DZN format.
+fn build_dzn(
+	num_tasks: usize,
+	horizon: u32,
+	num_cooks: usize,
+	num_recipes: usize,
+	num_deps: usize,
+	num_equipment: usize,
+	num_kinds: usize,
+	max_resources: usize,
+	num_skills: usize,
+	num_preheats: usize,
+	durations: &[i64],
+	needs_cook_arr: &[bool],
+	recipe_of: &[i64],
+	deps_from: &[i64],
+	deps_to: &[i64],
+	equip_kind: &[i64],
+	task_kinds_flat: &[i64],
+	kind_start: &[i64],
+	kind_end: &[i64],
+	eff_duration: &[Vec<i64>],
+	cook_skill_level: &[Vec<i64>],
+	required_skill: &[i64],
+	min_level: &[i64],
+	preheat_tasks: &[i64],
+	preheat_bakes: &[i64],
+) -> String {
+	let mut w = DznWriter::new();
+
+	w.param("num_tasks", num_tasks);
+	w.param("horizon", horizon);
+	w.param("num_cooks", num_cooks);
+	w.param("num_recipes", num_recipes);
+	w.param("num_deps", num_deps);
+	w.param("num_equipment", num_equipment);
+	w.param("num_kinds", num_kinds);
+	w.param("max_resources", max_resources.max(1));
+	w.param("num_skills", num_skills);
+	w.param("num_preheats", num_preheats);
+
+	w.int_array("duration", durations);
+	w.bool_array("needs_cook", needs_cook_arr);
+	w.int_array("recipe_of", recipe_of);
+	w.int_array("deps_from", deps_from);
+	w.int_array("deps_to", deps_to);
+	w.int_array("equip_kind", equip_kind);
+
+	if max_resources > 0 {
+		w.int_array2d("task_kinds", 1, num_tasks, 1, max_resources, task_kinds_flat);
+	} else {
+		w.int_array2d("task_kinds", 1, num_tasks, 1, 1, &[0i64]);
+	}
+
+	if num_kinds > 0 {
+		w.int_array("kind_start", kind_start);
+		w.int_array("kind_end", kind_end);
+	} else {
+		w.int_array("kind_start", &[0i64]);
+		w.int_array("kind_end", &[0i64]);
+	}
+
+	let eff_flat: Vec<i64> = eff_duration.iter().flat_map(|row| row.iter().copied()).collect();
+	w.int_array2d("eff_duration", 0, num_cooks, 1, num_tasks, &eff_flat);
+
+	let csl_flat: Vec<i64> = cook_skill_level.iter().flat_map(|row| row.iter().copied()).collect();
+	w.int_array2d("cook_skill_level", 0, num_cooks, 1, num_skills.max(1), &csl_flat);
+
+	w.int_array("required_skill", required_skill);
+	w.int_array("min_level", min_level);
+	w.int_array("preheat_tasks", preheat_tasks);
+	w.int_array("preheat_bakes", preheat_bakes);
+
+	w.content
+}
+
+/// Spawn `minizinc --solver gecode --json-stream`, pipe model + data via
+/// stdin, and return the raw JSON-stream output. Detects UNSAT and solver
+/// failures.
+fn run_solver(model_input: &str) -> Result<String, ScheduleError> {
 	let mut child = Command::new("minizinc")
 		.arg("--solver")
 		.arg("gecode")
@@ -549,38 +514,64 @@ pub fn schedule(
 		.stdin
 		.take()
 		.expect("stdin configured")
-		.write_all(model.as_bytes())?;
+		.write_all(model_input.as_bytes())?;
 
 	let output = child.wait_with_output()?;
-
 	let stderr = String::from_utf8_lossy(&output.stderr);
 	let stdout = String::from_utf8_lossy(&output.stdout);
 
 	if !output.status.success() {
-		let mut msg = format!("minizinc exited with code {:?}", output.status.code(),);
-		if !stderr.is_empty() {
-			msg.push_str(&format!("\nstderr: {}", stderr));
-		}
-		msg.push_str(&format!("\nmodel:\n{}", model));
-		return Err(ScheduleError::SolverFailure(msg));
-	}
-	let assign_len = tasks.len() * max_resources;
-	let mut last_solution: Option<(Vec<u32>, Vec<usize>, Vec<usize>)> = None;
+		let exit_code = output.status.code();
+		let stderr_lower = stderr.to_lowercase();
 
-	fn parse_array_i64(s: &str) -> Option<Vec<i64>> {
-		let s = s.trim();
-		if !s.starts_with('[') || !s.ends_with(']') {
-			return None;
+		if stderr_lower.contains("unsatisfiable") {
+			return Err(ScheduleError::Unfeasible(format!(
+				"Problem is unsatisfiable. stderr: {}",
+				stderr
+			)));
 		}
-		let inner = &s[1..s.len() - 1];
-		if inner.is_empty() {
-			return Some(Vec::new());
-		}
-		inner
-			.split(',')
-			.map(|n| n.trim().parse::<i64>().ok())
-			.collect()
+
+		return Err(ScheduleError::SolverFailure(format!(
+			"minizinc exited with code {:?}. stderr: {}\nstdout: {}\n(model omitted, {} chars)",
+			exit_code,
+			stderr,
+			stdout,
+			model_input.len()
+		)));
 	}
+
+	let stderr_lower = stderr.to_lowercase();
+	if stderr_lower.contains("unsatisfiable") {
+		return Err(ScheduleError::Unfeasible(format!(
+			"Problem is unsatisfiable. stderr: {}",
+			stderr
+		)));
+	}
+
+	if stdout.is_empty() {
+		return Err(ScheduleError::NoSolution);
+	}
+
+	Ok(stdout.to_string())
+}
+
+#[allow(clippy::too_many_arguments)]
+/// Parse the JSON-stream solver output into a [`Plan`]. Extracts `start`,
+/// `cook`, and `assign` arrays, then maps indices back to names.
+fn parse_solution(
+	stdout: &str,
+	tasks: &[TaskData],
+	id_to_idx: &HashMap<String, usize>,
+	cooks: &[Cook],
+	equipment: &[EquipInfo],
+	max_resources: usize,
+	durations: &[i64],
+	eff_duration: &[Vec<i64>],
+	needs_cook_arr: &[bool],
+) -> Result<Plan, ScheduleError> {
+	let num_tasks = tasks.len();
+	let assign_len = num_tasks * max_resources.max(1);
+	let mut last_solution: Option<(Vec<u32>, Vec<usize>, Vec<usize>)> = None;
 
 	for line in stdout.lines() {
 		let parsed: serde_json::Value = match serde_json::from_str(line) {
@@ -604,36 +595,27 @@ pub fn schedule(
 		let mut assign_vals: Option<Vec<usize>> = None;
 
 		for line in output_str.lines() {
-			if let Some(arr_str) = line
-				.strip_prefix("start = ")
-				.and_then(|s| s.strip_suffix(';'))
-				&& let Some(v) = parse_array_i64(arr_str)
+			if let Some(arr_str) = line.strip_prefix("start = ").and_then(|s| s.strip_suffix(';'))
+				&& let Some(v) = parse_i64_array(arr_str)
 			{
 				start_vals = Some(v.into_iter().map(|x| x as u32).collect());
 			}
-			if let Some(arr_str) = line
-				.strip_prefix("cook = ")
-				.and_then(|s| s.strip_suffix(';'))
-				&& let Some(v) = parse_array_i64(arr_str)
+			if let Some(arr_str) = line.strip_prefix("cook = ").and_then(|s| s.strip_suffix(';'))
+				&& let Some(v) = parse_i64_array(arr_str)
 			{
 				cook_vals = Some(v.into_iter().map(|x| x as usize).collect());
 			}
-			if let Some(arr_str) = line
-				.strip_prefix("assign = ")
-				.and_then(|s| s.strip_suffix(';'))
-				&& let Some(v) = parse_array_i64(arr_str)
+			if let Some(arr_str) = line.strip_prefix("assign = ").and_then(|s| s.strip_suffix(';'))
+				&& let Some(v) = parse_i64_array(arr_str)
 			{
 				assign_vals = Some(v.into_iter().map(|x| x as usize).collect());
 			}
 		}
 
-		if let (Some(start_vals), Some(cook_vals), Some(assign_vals)) =
-			(start_vals, cook_vals, assign_vals)
-			&& start_vals.len() == tasks.len()
-			&& cook_vals.len() == tasks.len()
-			&& assign_vals.len() == assign_len
+		if let (Some(sv), Some(cv), Some(av)) = (&start_vals, &cook_vals, &assign_vals)
+			&& sv.len() == num_tasks && cv.len() == num_tasks && av.len() == assign_len
 		{
-			last_solution = Some((start_vals, cook_vals, assign_vals));
+			last_solution = Some((sv.clone(), cv.clone(), av.clone()));
 		}
 	}
 
@@ -643,34 +625,38 @@ pub fn schedule(
 		.iter()
 		.enumerate()
 		.map(|(i, task)| {
-			let cook_idx = cook_vals[i];
-			let cook_name = if cook_idx > 0 && cook_idx <= cooks.len() {
-				Some(cooks[cook_idx - 1].name.clone())
-			} else {
-				None
+			let cook_name = {
+				let ci = cook_vals[i];
+				if ci > 0 && ci <= cooks.len() {
+					Some(cooks[ci - 1].name.clone())
+				} else {
+					None
+				}
 			};
+
 			let resource_ids: Vec<Option<String>> = (0..task.resource_kinds.len())
 				.map(|r| {
-					let assign_idx = assign_vals[i * max_resources + r];
-					if assign_idx > 0 && assign_idx <= equipment.len() {
-						Some(equipment[assign_idx - 1].name.clone())
+					let ai = assign_vals[i * max_resources.max(1) + r];
+					if ai > 0 && ai <= equipment.len() {
+						Some(equipment[ai - 1].name.clone())
 					} else {
 						None
 					}
 				})
 				.collect();
+
+			let actual_dur = if needs_cook_arr[i] {
+				eff_duration[cook_vals[i]][i] as u32
+			} else {
+				durations[i] as u32
+			};
+
 			let deps_ids: Vec<String> = task
 				.dependencies
 				.iter()
 				.filter(|d| id_to_idx.contains_key(d.as_str()))
 				.cloned()
 				.collect();
-
-			let actual_dur = if needs_cook_arr[i] {
-				eff_duration[cook_vals[i]][i]
-			} else {
-				durations[i]
-			};
 
 			Task {
 				id: task.id.clone(),
@@ -689,21 +675,435 @@ pub fn schedule(
 	Ok(Plan { tasks: plan_tasks })
 }
 
-struct EquipInfo {
-	name: String,
-	kind: String,
+/// Parse a `[1, 2, 3]` string into `Vec<i64>`. Returns `None` on parse failure.
+fn parse_i64_array(s: &str) -> Option<Vec<i64>> {
+	let s = s.trim();
+	if !s.starts_with('[') || !s.ends_with(']') {
+		return None;
+	}
+	let inner = &s[1..s.len() - 1];
+	if inner.is_empty() {
+		return Some(Vec::new());
+	}
+	inner.split(',').map(|n| n.trim().parse::<i64>().ok()).collect()
 }
 
-struct TaskData {
-	id: String,
-	description: String,
-	duration_minutes: u32,
-	resource_kinds: Vec<String>,
-	dependencies: Vec<String>,
-	recipe_idx: usize,
-	needs_cook: bool,
-	duration_by_skill: Option<HashMap<SkillLevel, u32>>,
-	skill: Option<String>,
-	min_skill_level: Option<SkillLevel>,
-	temperature_celsius: Option<u16>,
+/// Flatten recipes into a flat task list, prefixing step IDs with the
+/// recipe name, then inject pre-heat tasks for any step with a
+/// `temperature_celsius` value.
+fn expand_tasks(recipes: &[Recipe], kitchen: &Kitchen) -> (Vec<TaskData>, Vec<PreHeatPair>) {
+	let mut tasks = Vec::new();
+
+	for (ri, recipe) in recipes.iter().enumerate() {
+		for step in &recipe.steps {
+			let tid = format!("{}:{}", recipe.name, step.id);
+			let deps: Vec<String> = step
+				.dependencies
+				.iter()
+				.map(|d| format!("{}:{}", recipe.name, d))
+				.collect();
+			tasks.push(TaskData {
+				id: tid,
+				description: step.description.clone(),
+				duration_minutes: step.duration_minutes,
+				resource_kinds: step.resource_kinds.clone(),
+				dependencies: deps,
+				recipe_idx: ri,
+				needs_cook: step.needs_cook,
+				duration_by_skill: step.duration_by_skill.clone(),
+				skill: step.skill.clone(),
+				min_skill_level: step.min_skill_level,
+				temperature_celsius: step.temperature_celsius,
+			});
+		}
+	}
+
+	let preheat_pairs = inject_preheat_tasks(&mut tasks, kitchen);
+
+	(tasks, preheat_pairs)
+}
+
+/// Links a synthetic pre-heat task to its corresponding bake task.
+struct PreHeatPair {
+	/// Index of the pre-heat task in the task list.
+	preheat_idx: usize,
+	/// Index of the bake task in the task list.
+	bake_idx: usize,
+}
+
+/// Scan tasks for `temperature_celsius`, insert synthetic pre-heat tasks,
+/// chain multiple pre-heats for the same equipment kind, and add
+/// dependencies from pre-heat to bake. Returns the list of
+/// (preheat, bake) index pairs.
+fn inject_preheat_tasks(tasks: &mut Vec<TaskData>, kitchen: &Kitchen) -> Vec<PreHeatPair> {
+	let mut kind_temps: HashMap<String, Vec<u16>> = HashMap::new();
+	let mut temp_to_bakes: HashMap<(String, u16), Vec<usize>> = HashMap::new();
+
+	for (i, task) in tasks.iter().enumerate() {
+		if let Some(temp) = task.temperature_celsius
+			&& let Some(kind) = task.resource_kinds.first()
+		{
+			kind_temps.entry(kind.clone()).or_default().push(temp);
+			temp_to_bakes.entry((kind.clone(), temp)).or_default().push(i);
+		}
+	}
+
+	if kind_temps.is_empty() {
+		return Vec::new();
+	}
+
+	let mut preheat_pairs = Vec::new();
+
+	for (kind, temps) in &kind_temps {
+		let min_rate = kitchen
+			.equipment
+			.iter()
+			.filter(|e| e.kind == *kind)
+			.map(|e| e.preheat_rate_minutes_per_celsius)
+			.fold(f64::INFINITY, f64::min);
+
+		if min_rate <= 0.0 || !min_rate.is_finite() {
+			continue;
+		}
+
+		let mut unique_temps: Vec<u16> = temps.clone();
+		unique_temps.sort();
+		unique_temps.dedup();
+
+		let mut prev_temp = kitchen.ambient_temperature_celsius as u16;
+		let mut prev_preheat_id: Option<String> = None;
+
+		for &temp in &unique_temps {
+			let delta = (temp as f64 - prev_temp as f64).max(0.0);
+			let duration = (min_rate * delta).round() as u32;
+			let preheat_id = format!("{}:preheat:{}", kind, temp);
+
+			let mut deps = Vec::new();
+			if let Some(ref prev_id) = prev_preheat_id {
+				deps.push(prev_id.clone());
+			}
+
+			let bake_idx = temp_to_bakes[&(kind.clone(), temp)][0];
+			debug_assert!(bake_idx < tasks.len(), "preheat bake index {} out of range 0..{}", bake_idx, tasks.len());
+			let preheat_idx = tasks.len();
+
+			tasks.push(TaskData {
+				id: preheat_id.clone(),
+				description: format!("Pre-heat {} to {}°C", kind, temp),
+				duration_minutes: duration,
+				resource_kinds: vec![kind.clone()],
+				dependencies: deps,
+				recipe_idx: tasks[bake_idx].recipe_idx,
+				needs_cook: false,
+				duration_by_skill: None,
+				skill: None,
+				min_skill_level: None,
+				temperature_celsius: None,
+			});
+
+			for &bi in &temp_to_bakes[&(kind.clone(), temp)] {
+				debug_assert!(bi < tasks.len(), "preheat bake dep target {} out of range 0..{}", bi, tasks.len());
+				tasks[bi].dependencies.push(preheat_id.clone());
+				preheat_pairs.push(PreHeatPair { preheat_idx, bake_idx: bi });
+			}
+
+			prev_temp = temp;
+			prev_preheat_id = Some(preheat_id);
+		}
+	}
+
+	debug_assert!(preheat_pairs.iter().all(|p| p.preheat_idx < tasks.len() && p.bake_idx < tasks.len()));
+
+	preheat_pairs
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn dummy_task(id: &str, deps: Vec<&str>) -> TaskData {
+		TaskData {
+			id: id.to_string(),
+			description: String::new(),
+			duration_minutes: 10,
+			resource_kinds: vec![],
+			dependencies: deps.into_iter().map(|d| d.to_string()).collect(),
+			recipe_idx: 0,
+			needs_cook: true,
+			duration_by_skill: None,
+			skill: None,
+			min_skill_level: None,
+			temperature_celsius: None,
+		}
+	}
+
+	fn dummy_equip(kind: &str) -> EquipInfo {
+		EquipInfo { name: kind.to_string(), kind: kind.to_string() }
+	}
+
+	#[test]
+	fn build_dependencies_empty() {
+		let tasks = vec![dummy_task("a", vec![])];
+		let id_to_idx: HashMap<_, _> = [("a".to_string(), 0)].into();
+		let (from, to) = build_dependencies(&tasks, &id_to_idx);
+		assert!(from.is_empty());
+		assert!(to.is_empty());
+	}
+
+	#[test]
+	fn build_dependencies_linear_chain() {
+		let tasks = vec![
+			dummy_task("a", vec![]),
+			dummy_task("b", vec!["a"]),
+			dummy_task("c", vec!["b"]),
+		];
+		let id_to_idx: HashMap<_, _> =
+			[("a".to_string(), 0), ("b".to_string(), 1), ("c".to_string(), 2)].into();
+		let (from, to) = build_dependencies(&tasks, &id_to_idx);
+		assert_eq!(from, vec![1i64, 2i64]);
+		assert_eq!(to, vec![2i64, 3i64]);
+	}
+
+	#[test]
+	fn build_dependencies_fork() {
+		let tasks = vec![
+			dummy_task("a", vec![]),
+			dummy_task("b", vec!["a"]),
+			dummy_task("c", vec!["a"]),
+		];
+		let id_to_idx: HashMap<_, _> =
+			[("a".to_string(), 0), ("b".to_string(), 1), ("c".to_string(), 2)].into();
+		let (from, to) = build_dependencies(&tasks, &id_to_idx);
+		assert_eq!(from, vec![1i64, 1i64]);
+		assert_eq!(to, vec![2i64, 3i64]);
+	}
+
+	#[test]
+	fn build_dependencies_ignores_missing_deps() {
+		let tasks = vec![dummy_task("a", vec!["missing"])];
+		let id_to_idx: HashMap<_, _> = [("a".to_string(), 0)].into();
+		let (from, to) = build_dependencies(&tasks, &id_to_idx);
+		assert!(from.is_empty());
+		assert!(to.is_empty());
+	}
+
+	#[test]
+	fn build_dependencies_deduplicates() {
+		let tasks = vec![
+			dummy_task("a", vec![]),
+			dummy_task("b", vec!["a"]),
+			dummy_task("c", vec!["b", "a"]),
+		];
+		let id_to_idx: HashMap<_, _> =
+			[("a".to_string(), 0), ("b".to_string(), 1), ("c".to_string(), 2)].into();
+		let (from, to) = build_dependencies(&tasks, &id_to_idx);
+		assert_eq!(from, vec![1i64, 2i64, 1i64]);
+		assert_eq!(to, vec![2i64, 3i64, 3i64]);
+	}
+
+	#[test]
+	fn build_equip_kind_mapping_single_kind() {
+		let equip = vec![dummy_equip("oven")];
+		let (kind_to_idx, kinds) = build_equip_kind_mapping(&equip);
+		assert_eq!(kind_to_idx.len(), 1);
+		assert_eq!(*kind_to_idx.get("oven").unwrap(), 1);
+		assert_eq!(kinds, vec![1i64]);
+	}
+
+	#[test]
+	fn build_equip_kind_mapping_multiple_kinds() {
+		let equip = vec![
+			dummy_equip("burner"),
+			dummy_equip("burner"),
+			dummy_equip("oven"),
+			dummy_equip("pot"),
+		];
+		let (kind_to_idx, kinds) = build_equip_kind_mapping(&equip);
+		assert_eq!(kind_to_idx.len(), 3);
+		assert_eq!(kinds, vec![1i64, 1i64, 2i64, 3i64]);
+	}
+
+	#[test]
+	fn build_kind_ranges_single_per_kind() {
+		let (start, end) = build_kind_ranges(&[1i64, 2i64, 3i64], 3);
+		assert_eq!(start, vec![1i64, 2i64, 3i64]);
+		assert_eq!(end, vec![1i64, 2i64, 3i64]);
+	}
+
+	#[test]
+	fn build_kind_ranges_multiple_per_kind() {
+		let (start, end) = build_kind_ranges(&[1i64, 1i64, 2i64, 2i64, 2i64], 2);
+		assert_eq!(start, vec![1i64, 3i64]);
+		assert_eq!(end, vec![2i64, 5i64]);
+	}
+
+	#[test]
+	fn build_task_kinds_known_and_unknown() {
+		let mut kind_to_idx: HashMap<String, usize> = HashMap::new();
+		kind_to_idx.insert("oven".to_string(), 1);
+		kind_to_idx.insert("burner".to_string(), 2);
+		let tasks = vec![
+			TaskData { resource_kinds: vec!["oven".into()], ..dummy_task("a", vec![]) },
+			TaskData {
+				resource_kinds: vec!["burner".into(), "pot".into()],
+				..dummy_task("b", vec![])
+			},
+			TaskData { resource_kinds: vec!["unknown".into()], ..dummy_task("c", vec![]) },
+		];
+		let result = build_task_kinds(&tasks, &kind_to_idx);
+		assert_eq!(result[0], vec![1usize]);
+		assert_eq!(result[1], vec![2usize, 0usize]);
+		assert_eq!(result[2], vec![0usize]);
+	}
+
+	#[test]
+	fn build_skill_data_no_skills() {
+		let tasks = vec![dummy_task("a", vec![])];
+		let cooks = vec![];
+		let (_, num, required, min_level, csl) = build_skill_data(&tasks, &cooks);
+		assert_eq!(num, 0);
+		assert_eq!(required, vec![-1i64]);
+		assert_eq!(min_level, vec![0i64]);
+		assert_eq!(csl, vec![vec![0i64]]);
+	}
+
+	#[test]
+	fn build_skill_data_single_skill() {
+		let tasks = vec![TaskData {
+			skill: Some("knife_work".into()),
+			min_skill_level: Some(SkillLevel::Novice),
+			..dummy_task("a", vec![])
+		}];
+		let cooks = vec![Cook {
+			name: "Alice".into(),
+			skills: [("knife_work".into(), SkillLevel::Advanced)].into(),
+		}];
+		let (_, num, required, min_level, _csl) = build_skill_data(&tasks, &cooks);
+		assert_eq!(num, 1);
+		assert_eq!(required, vec![1i64]);
+		assert_eq!(min_level, vec![SkillLevel::Novice as u8 as i64]);
+	}
+
+	#[test]
+	fn compute_effective_durations_no_skill() {
+		let tasks = vec![dummy_task("a", vec![])];
+		let cooks = vec![Cook { name: "Bob".into(), skills: [].into() }];
+		let required_skill = vec![-1i64];
+		let csl = vec![vec![0i64], vec![0i64]];
+		let result = compute_effective_durations(&tasks, &cooks, &required_skill, &csl);
+		assert_eq!(result.len(), 2);
+		assert_eq!(result[0], vec![10i64]);
+		assert_eq!(result[1], vec![10i64]);
+	}
+
+	#[test]
+	fn compute_effective_durations_skill_fallback() {
+		use std::collections::HashMap;
+		let tasks = vec![TaskData {
+			duration_minutes: 20,
+			duration_by_skill: Some(HashMap::from([
+				(SkillLevel::Unskilled, 20),
+				(SkillLevel::Intermediate, 10),
+			])),
+			skill: Some("knife_work".into()),
+			..dummy_task("a", vec![])
+		}];
+		let cooks = vec![
+			Cook {
+				name: "NoviceCook".into(),
+				skills: [("knife_work".into(), SkillLevel::Novice)].into(),
+			},
+			Cook {
+				name: "ExpertCook".into(),
+				skills: [("knife_work".into(), SkillLevel::Expert)].into(),
+			},
+		];
+		let required_skill = vec![1i64];
+		let csl = vec![vec![0i64], vec![1i64], vec![4i64]];
+		let result = compute_effective_durations(&tasks, &cooks, &required_skill, &csl);
+		assert_eq!(result[0], vec![20i64]); // base
+		assert_eq!(result[1], vec![20i64]); // Novice → Unskilled fallback
+		assert_eq!(result[2], vec![10i64]); // Expert → Intermediate fallback
+	}
+
+	#[test]
+	fn inject_preheat_tasks_no_temperature() {
+		let mut tasks = vec![dummy_task("a", vec![])];
+		let kitchen = Kitchen {
+			equipment: vec![],
+			ambient_temperature_celsius: 20.0,
+			food: vec![],
+			materials: vec![],
+		};
+		let pairs = inject_preheat_tasks(&mut tasks, &kitchen);
+		assert!(pairs.is_empty());
+		assert_eq!(tasks.len(), 1);
+	}
+
+	#[test]
+	fn inject_preheat_tasks_single_temperature() {
+		let mut tasks = vec![TaskData {
+			temperature_celsius: Some(180),
+			resource_kinds: vec!["oven".into()],
+			..dummy_task("bake", vec![])
+		}];
+		let kitchen = Kitchen {
+			equipment: vec![crate::models::kitchen::Equipment {
+				id: "ov-1".into(),
+				name: "Main Oven".into(),
+				kind: "oven".into(),
+				preheat_rate_minutes_per_celsius: 0.1,
+			}],
+			ambient_temperature_celsius: 20.0,
+			food: vec![],
+			materials: vec![],
+		};
+		let pairs = inject_preheat_tasks(&mut tasks, &kitchen);
+		assert_eq!(tasks.len(), 2);
+		assert_eq!(pairs.len(), 1);
+		assert_eq!(pairs[0].preheat_idx, 1);
+		assert_eq!(pairs[0].bake_idx, 0);
+		assert_eq!(tasks[1].duration_minutes, 16); // (180 - 20) * 0.1
+		assert!(tasks[1].description.starts_with("Pre-heat"));
+		assert!(tasks[0].dependencies.contains(&tasks[1].id));
+	}
+
+	#[test]
+	fn inject_preheat_tasks_chained_temperatures() {
+		let mut tasks = vec![
+			TaskData {
+				temperature_celsius: Some(180),
+				resource_kinds: vec!["oven".into()],
+				..dummy_task("bake1", vec![])
+			},
+			TaskData {
+				temperature_celsius: Some(200),
+				resource_kinds: vec!["oven".into()],
+				..dummy_task("bake2", vec![])
+			},
+		];
+		let kitchen = Kitchen {
+			equipment: vec![crate::models::kitchen::Equipment {
+				id: "ov-1".into(),
+				name: "Main Oven".into(),
+				kind: "oven".into(),
+				preheat_rate_minutes_per_celsius: 0.1,
+			}],
+			ambient_temperature_celsius: 20.0,
+			food: vec![],
+			materials: vec![],
+		};
+		let pairs = inject_preheat_tasks(&mut tasks, &kitchen);
+		assert_eq!(tasks.len(), 4);
+		assert_eq!(pairs.len(), 2);
+		// First pre-heat (idx=2): (180 - 20) * 0.1 = 16, no deps
+		assert_eq!(tasks[2].duration_minutes, 16);
+		assert!(tasks[2].dependencies.is_empty());
+		// Second pre-heat (idx=3): (200 - 180) * 0.1 = 2, depends on first
+		assert_eq!(tasks[3].duration_minutes, 2);
+		assert!(tasks[3].dependencies.contains(&tasks[2].id));
+		// Bake tasks depend on their respective pre-heats
+		assert!(tasks[0].dependencies.contains(&tasks[2].id));
+		assert!(tasks[1].dependencies.contains(&tasks[3].id));
+	}
 }

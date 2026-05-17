@@ -1,35 +1,274 @@
 #+title: Solver (=schedule= binary)
 
-Uses MiniZinc with Gecode to produce an optimized schedule.
+The solver takes a kitchen, cooks, and recipes, then uses constraint
+programming (MiniZinc + Gecode) to produce an optimized schedule. This
+document explains how the model works, the design decisions, and the
+alternatives considered.
+
+* Approach
+
+Constraint programming was chosen over the original ad-hoc sequential
+heuristic because the CP solver explores task interleavings that a
+greedy scheduler misses, producing tighter schedules (e.g., ~97 min vs
+~110 min makespan for 4 cooks + 3 recipes).
+
+The problem is formulated as a CSP/COP:
+- **Decide**: When each task starts, which cook handles it, and which
+  equipment it uses.
+- **Respect**: Dependency chains, equipment capacity, cook
+  availability, skill eligibility, pre-heat ordering.
+- **Optimize**: Weighted combination of makespan, recipe end-time
+  alignment, and pre-heat waste.
+
+* Data Flow
+
+#+begin_src
+RON data ─→ Rust (schedule.rs) ─→ DZN data ─→ MiniZinc model ─→ Gecode ─→ JSON-stream ─→ Rust parse ─→ Plan
+#+end_src
+
+Rust pre-processing handles: recipe expansion (flat task list with
+prefixed IDs), pre-heat injection, string-to-integer index mapping,
+skill-duration matrix pre-computation, and DZN serialization. The
+MiniZinc model handles only constraints, objective, and output.
 
 * Model
 
-** Decision variables
+** Parameters (from Rust DZN)
 
-- =start[t]= (0..horizon)
-- =cook[t]= (0..num_cooks)
-- =assign[t]= (0..num_equipment)
+|= Parameter          | Domain           | Description                           |
+|=--------------------+------------------+---------------------------------------=|
+|= num_tasks          | int              | Total tasks (incl. synthetic pre-heat)|
+|= horizon            | int              | Upper bound on start times            |
+|= num_cooks          | int              | Real cooks + 1 (index 0 = no cook)    |
+|= num_recipes        | int              | Number of recipes                     |
+|= num_deps           | int              | Number of dependency edges            |
+|= num_equipment      | int              | Number of equipment items             |
+|= num_kinds          | int              | Number of distinct equipment kinds    |
+|= max_resources      | int              | Max resource slots per task           |
+|= num_skills         | int              | Distinct skill names                  |
+|= num_preheats       | int              | Synthetic pre-heat tasks injected     |
+|= duration[t]        | int              | Base duration (minutes)               |
+|= needs_cook[t]      | bool             | Whether task occupies a cook          |
+|= recipe_of[t]       | int              | Recipe index (1..num_recipes)         |
+|= deps_from[i]       | int              | Parent task index for dependency edge |
+|= deps_to[i]         | int              | Child task index for dependency edge  |
+|= equip_kind[e]      | int              | Kind index of equipment item          |
+|= task_kinds[t, r]   | int              | Required kind for task's resource slot|
+|= kind_start[k]      | int              | First equipment index for kind k      |
+|= kind_end[k]        | int              | Last equipment index for kind k       |
+|= eff_duration[c, t] | int              | Duration if cook c does task t        |
+|= cook_skill_level[c,s]| int            | Skill level of cook c in skill s      |
+|= required_skill[t]  | int              | Skill index required by task (0=none) |
+|= min_level[t]       | int              | Minimum skill level required          |
+|= preheat_tasks[p]   | int              | Task index of pre-heat task           |
+|= preheat_bakes[p]   | int              | Task index of the bake task           |
+
+** Decision Variables
+
+|= Variable            | Domain           | Description                           |
+|=---------------------+------------------+---------------------------------------=|
+|= start[t]            | 0..horizon       | Start offset (min)                    |
+|= cook[t]             | 0..num_cooks     | Cook assignment (0 = no cook)         |
+|= assign[t, r]        | 0..num_equipment | Equipment for resource slot r         |
+|= actual_duration[t]  | 0..horizon       | Effective duration (skill-adaptive)   |
+
+The horizon is set to the sum of all task durations — a simple but
+loose upper bound. Tighter bounds (e.g., critical path) would improve
+solving time but add complexity in Rust.
 
 ** Constraints
 
-- Dependency chains: =start[child] >= start[parent] + duration[parent]=
-- Resource disjunction: same-equipment tasks cannot overlap
-- Equipment kind matching: each task's =assign[t]= must map to a kitchen
-  equipment whose =kind= matches the task's =resource_kind=
-- Cook disjunction: same-cook tasks cannot overlap (=oven= tasks exempt)
-- Skill eligibility: tasks requiring a skill are only assigned to cooks
-  whose skill level meets =min_skill_level=
+*** Duration Selection
+
+#+begin_src
+actual_duration[t] = if needs_cook[t]
+  then eff_duration[cook[t], t]
+  else duration[t]
+#+end_src
+
+*Rationale*: Pre-computing =eff_duration[cook, task]= in Rust avoids
+complex conditional expressions in MiniZinc. The alternative —
+encoding skill lookup and fallback logic as MiniZinc constraints —
+would be much more verbose and harder to reason about.
+
+*** Dependency Chains
+
+#+begin_src
+start[deps_to[i]] >= start[deps_from[i]] + actual_duration[deps_from[i]]
+#+end_src
+
+Standard precedence constraint represented as (parent, child) edge
+pairs. Rust deduplicates edges and filters missing references.
+Redundant edges are harmless to the solver — no need for transitive
+closure.
+
+*** Resource Disjunction (pairwise)
+
+#+begin_src
+(assign[i, ri] > 0 /\ assign[i, ri] = assign[j, rj]) ->
+  (start[i] + actual_duration[i] <= start[j] \/
+   start[j] + actual_duration[j] <= start[i])
+#+end_src
+
+No two tasks may use the same equipment simultaneously. The =assign >
+0= guard filters unused resource slots.
+
+*Alternatives*:
+- **=cumulative= global constraint**: more efficient for large
+  instances but requires fixed resource consumption profiles and was
+  unnecessary for typical problem sizes (~50 tasks, ~30 equipment).
+- **Per-equipment constraints**: would require dynamic task grouping
+  by assignment, not expressible in MiniZinc's static model.
+  Pairwise disjunction handles this naturally at O(n² * r²) cost.
+
+*** Equipment Kind Matching
+
+#+begin_src
+assign[t, r] >= kind_start[task_kinds[t, r]] /\
+assign[t, r] <= kind_end[task_kinds[t, r]]  -- for kind > 0
+assign[t, r] == 0                             -- for kind == 0
+#+end_src
+
+Equipment items of the same kind are grouped into contiguous index
+ranges (=kind_start[k]..kind_end[k]=). The solver assigns each
+task's resource slot to an equipment item within the required kind's
+range. Unused slots (kind 0) are forced to 0.
+
+*Rationale*: Contiguous ranges avoid explicit set-membership checks
+and let the solver prune the assignment domain efficiently.
+
+*** Cook Allocation
+
+#+begin_src
+needs_cook[t]  →  cook[t] > 0
+not needs_cook[t] → cook[t] = 0
+
+cook[i] = cook[j]  →  tasks i and j do not overlap (needs_cook both true)
+#+end_src
+
+Two rules: tasks needing a cook get a real person (index > 0);
+set-and-forget tasks (oven, rest) get cook 0. No two active-cook
+tasks assigned to the same cook may overlap.
+
+*Rationale for set-and-forget*: Cooks are NOT blocked during
+oven/rest tasks. This models physical reality — you start the oven,
+walk away, and prep other dishes. Without this, schedules degrade
+because cooks appear busy during inactive periods.
+
+*** Skill Eligibility
+
+#+begin_src
+required_skill[t] > 0
+  → cook_skill_level[cook[t], required_skill[t]] >= min_level[t]
+#+end_src
+
+Cooks must meet the minimum skill level for any required skill.
 
 ** Objective
 
-=minimize max_end * (horizon + 1) + (max_end - min_recipe_end)=
-— weighted combination of makespan and recipe end-time alignment
+#+begin_src
+minimize max_end * (horizon + 1) * (1 + num_preheats)
+       + (max_end - min_recipe_end) * (1 + num_preheats)
+       + total_waste
+#+end_src
 
-* Cook allocation
+A weighted scalar combination with strict priority:
 
-- Tasks with =needs_cook= =false= (oven, rest, thaw, cooling) → =cook= 0 (no cook assigned)
-- Tasks with =needs_cook= =true= → assigned a distinct cook (1..num_cooks), blocking that
-  cook for the duration
-- Tasks requiring a skill (=skill= / =min_skill_level=) only assigned to cooks
-  whose level meets or exceeds the requirement; effective duration is looked up
-  from =duration_by_skill=, falling back to the nearest lower level
+1. **Makespan** (=max_end=) — dominates via =horizon + 1= multiplier.
+2. **Alignment** (=max_end - min_recipe_end=) — minimizes spread
+   between earliest/latest recipe completion. Without this, one dish
+   may finish far earlier and get cold.
+3. **Pre-heat waste** (=total_waste=) — sum of idle time between
+   pre-heat finish and bake start; tucks pre-heats close to their
+   bakes.
+
+*Why weighted scalar, not lexicographic*:
+MiniZinc's =++= operator for lexicographic optimization caused type
+errors with =var int= under Gecode 2.9.3. The weighted scalar approach
+achieves identical prioritization when weights are large enough to
+prevent lower-priority terms from compensating higher ones (using
+=horizon + 1= as the multiplier guarantees this regardless of actual
+values). The =(1 + num_preheats)= factor extends this guarantee when
+the waste term is active.
+
+* Pre-processing (Rust)
+
+** Recipe Expansion
+
+=expand_tasks()= flattens recipe steps into a flat =Vec<TaskData>=,
+prefixes step IDs with the recipe name (e.g., =s1= → =Lasagna:s1=),
+and resolves intra-recipe dependency references to use the prefixed
+IDs.
+
+** Pre-heat Injection
+
+=inject_preheat_tasks()= scans tasks for =temperature_celsius=, then
+inserts synthetic "Pre-heat" tasks. Multiple pre-heats for the same
+oven kind are chained: the second pre-heat starts from the first's
+target temperature, not from ambient.
+
+Duration = (target_temp - start_temp) × preheat_rate, where
+start_temp is either ambient or the previous pre-heat target.
+The fastest equipment for the kind is used — exact for single-oven
+kitchens, a minor approximation for multi-oven.
+
+*Why not in the model?*: Pre-heat tasks are synthetic — they don't
+exist in recipe data. Modeling them in MiniZinc would require either
+fixed pre-heat slots with conditional activation (fragile) or dynamic
+task creation (not supported). Rust pre-processing keeps the model
+clean and the logic testable.
+
+** Duration Matrix
+
+=compute_effective_durations()= builds
+=eff_duration[cook, task]= for all (cook, task) pairs. If the task
+defines =duration_by_skill=, the cook's skill level for the required
+skill is looked up via =duration_for_skill()=, which falls back to the
+nearest lower level if the exact level isn't in the map. Otherwise,
+the base =duration= is used.
+
+Pre-computing for all pairs (not just eligible ones) is correct
+because the solver enforces eligibility separately. An ineligible
+cook's pre-computed duration is simply never selected by the solver.
+
+* Indexing Convention
+
+All Rust→MiniZinc arrays are **1-indexed**:
+
+| Entity   | 0 =                        | 1..N =                  |
+|----------+----------------------------+-------------------------|
+| Cook     | No cook (set-and-forget)   | Real cook               |
+| Equipment| No equipment (unused slot) | Real equipment          |
+| Kind     | No kind (unused slot)      | Kind index              |
+| Skill    | No skill required          | Skill index             |
+
+*Rationale*: MiniZinc is 1-indexed natively. Passing 0-indexed data
+required =array1d= coercion that caused hard-to-debug errors.
+Consistency with MiniZinc's convention avoids conversion bugs.
+
+* Solver Integration
+
+The binary spawns:
+#+begin_src sh
+minizinc --solver gecode --json-stream --time-limit 10000 -
+#+end_src
+
+Model (.mzn) + data (.dzn) are concatenated and piped via stdin.
+Output is parsed from JSON-stream format: =start=, =cook=, and
+=assign= arrays are extracted and reconstructed into a =Plan= struct.
+
+Error handling detects UNSATISFIABLE, UNKNOWN (timeout/error), and
+parse failures, emitting diagnostic context with instance statistics.
+
+* Limitations
+
+- **Scaling**: Pairwise resource disjunction is O(n² × r²) — fine for
+  typical instances but may slow down for 100+ tasks / 50+ equipment.
+- **Horizon bound**: Sum-of-durations is loose. Critical-path bound
+  would improve solve times.
+- **Pre-heat approximation**: Duration computed against fastest
+  equipment. If the solver assigns a bake to a slower oven, the
+  pre-heat duration is optimistic.
+- **No warm start**: The solver starts from scratch each invocation.
+- **No intermediate solutions**: JSON-stream can emit best-so-far
+  solutions, but they are currently ignored.

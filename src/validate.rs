@@ -52,24 +52,24 @@ pub fn validate(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Vec<Va
 					continue;
 				}
 
-				if let Some(ref skill) = step.skill {
-					if let Some(min_level) = step.min_skill_level {
-						let qualified = cooks
-							.iter()
-							.any(|c| c.skills.get(skill).is_some_and(|level| *level >= min_level));
-						if !qualified {
-							let names: Vec<&str> = cooks.iter().map(|c| c.name.as_str()).collect();
-							errors.push(ValidationError {
-								error_type: "cook_skill_insufficient".into(),
-								message: format!(
-									"No cook meets the '{}' ≥ {:?} requirement for '{}' (available cooks: {})",
-									skill,
-									min_level,
-									task_id,
-									names.join(", "),
-								),
-							});
-						}
+				if let Some(ref skill) = step.skill
+					&& let Some(min_level) = step.min_skill_level
+				{
+					let qualified = cooks
+						.iter()
+						.any(|c| c.skills.get(skill).is_some_and(|level| *level >= min_level));
+					if !qualified {
+						let names: Vec<&str> = cooks.iter().map(|c| c.name.as_str()).collect();
+						errors.push(ValidationError {
+							error_type: "cook_skill_insufficient".into(),
+							message: format!(
+								"No cook meets the '{}' ≥ {:?} requirement for '{}' (available cooks: {})",
+								skill,
+								min_level,
+								task_id,
+								names.join(", "),
+							),
+						});
 					}
 				}
 			}
