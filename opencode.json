@@ -16,6 +16,7 @@
       "cargo add *": "ask",
       "cargo check *": "allow",
       "cargo clippy *": "allow",
+      "cargo doc *": "allow",
       "cargo fmt": "allow",
       "cargo nextest run *": "allow",
       "cargo rm *": "allow",
