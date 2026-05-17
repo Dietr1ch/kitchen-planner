@@ -9,8 +9,6 @@ use crate::models::kitchen::Kitchen;
 use crate::models::plan::{Plan, Task};
 use crate::models::recipe::Recipe;
 
-use googletest::prelude::*;
-
 #[derive(Debug, thiserror::Error)]
 pub enum ScheduleError {
 	#[error("failed to create or write model file")]
@@ -52,7 +50,7 @@ impl DznWriter {
 		self.content.push_str(&format!("{} = {};\n", name, value));
 	}
 
-	fn int_array(&mut self, name: &str, _lo: usize, _hi: usize, values: &[i64]) {
+	fn int_array(&mut self, name: &str, values: &[i64]) {
 		self.content.push_str(&format!(
 			"{} = [{}];\n",
 			name,
@@ -64,7 +62,7 @@ impl DznWriter {
 		));
 	}
 
-	fn bool_array(&mut self, name: &str, _lo: usize, _hi: usize, values: &[bool]) {
+	fn bool_array(&mut self, name: &str, values: &[bool]) {
 		self.content.push_str(&format!(
 			"{} = [{}];\n",
 			name,
@@ -191,7 +189,7 @@ pub fn schedule(
 	);
 
 	let model_input = format!("{}\n{}", MODEL, dzn);
-	let solution = run_solver(&model_input, &tasks)?;
+	let solution = run_solver(&model_input)?;
 
 	parse_solution(&solution, &tasks, &id_to_idx, cooks, &equipment, max_resources, &durations, &eff_duration, &needs_cook_arr)
 }
@@ -318,7 +316,7 @@ fn build_skill_data(
 		.map(|t| t.min_skill_level.map(|l| l as u8 as i64).unwrap_or(0))
 		.collect();
 
-	debug_assert!(min_level.iter().all(|&l| l >= 0 && l <= 4), "min_level out of range 0..4");
+    debug_assert!(min_level.iter().all(|&l| (0..=4).contains(&l)), "min_level out of range 0..4");
 
 	let num_cooks = cooks.len();
 	let mut cook_skill_level = vec![vec![0i64; num_skills.max(1)]; num_cooks + 1];
@@ -421,26 +419,25 @@ fn build_dzn(
 	w.param("num_skills", num_skills);
 	w.param("num_preheats", num_preheats);
 
-	w.int_array("duration", 1, num_tasks, durations);
-	w.bool_array("needs_cook", 1, num_tasks, needs_cook_arr);
-	w.int_array("recipe_of", 1, num_tasks, recipe_of);
-	w.int_array("deps_from", 1, num_deps, deps_from);
-	w.int_array("deps_to", 1, num_deps, deps_to);
-	w.int_array("equip_kind", 1, num_equipment, equip_kind);
+	w.int_array("duration", durations);
+	w.bool_array("needs_cook", needs_cook_arr);
+	w.int_array("recipe_of", recipe_of);
+	w.int_array("deps_from", deps_from);
+	w.int_array("deps_to", deps_to);
+	w.int_array("equip_kind", equip_kind);
 
 	if max_resources > 0 {
 		w.int_array2d("task_kinds", 1, num_tasks, 1, max_resources, task_kinds_flat);
 	} else {
-		// MiniZinc requires a valid 2D array even if empty
 		w.int_array2d("task_kinds", 1, num_tasks, 1, 1, &[0i64]);
 	}
 
 	if num_kinds > 0 {
-		w.int_array("kind_start", 1, num_kinds, kind_start);
-		w.int_array("kind_end", 1, num_kinds, kind_end);
+		w.int_array("kind_start", kind_start);
+		w.int_array("kind_end", kind_end);
 	} else {
-		w.int_array("kind_start", 1, 1, &[0i64]);
-		w.int_array("kind_end", 1, 1, &[0i64]);
+		w.int_array("kind_start", &[0i64]);
+		w.int_array("kind_end", &[0i64]);
 	}
 
 	let eff_flat: Vec<i64> = eff_duration.iter().flat_map(|row| row.iter().copied()).collect();
@@ -449,15 +446,15 @@ fn build_dzn(
 	let csl_flat: Vec<i64> = cook_skill_level.iter().flat_map(|row| row.iter().copied()).collect();
 	w.int_array2d("cook_skill_level", 0, num_cooks, 1, num_skills.max(1), &csl_flat);
 
-	w.int_array("required_skill", 1, num_tasks, required_skill);
-	w.int_array("min_level", 1, num_tasks, min_level);
-	w.int_array("preheat_tasks", 1, num_preheats.max(1), preheat_tasks);
-	w.int_array("preheat_bakes", 1, num_preheats.max(1), preheat_bakes);
+	w.int_array("required_skill", required_skill);
+	w.int_array("min_level", min_level);
+	w.int_array("preheat_tasks", preheat_tasks);
+	w.int_array("preheat_bakes", preheat_bakes);
 
 	w.content
 }
 
-fn run_solver(model_input: &str, _tasks: &[TaskData]) -> Result<String, ScheduleError> {
+fn run_solver(model_input: &str) -> Result<String, ScheduleError> {
 	let mut child = Command::new("minizinc")
 		.arg("--solver")
 		.arg("gecode")
