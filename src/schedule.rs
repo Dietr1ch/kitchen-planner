@@ -32,7 +32,9 @@ fn build_model(
 	num_equipment: usize,
 	num_kinds: usize,
 	equip_kind: &[usize],
-	task_kind: &[usize],
+	task_kinds_flat: &[usize],
+	max_resources: usize,
+	num_resources: &[usize],
 	kind_start: &[usize],
 	kind_end: &[usize],
 	eff_duration: &[Vec<u32>],
@@ -91,14 +93,29 @@ fn build_model(
 	}
 	m.push_str("];\n");
 
-	m.push_str("array[1..num_tasks] of int: task_kind = [");
-	for (i, k) in task_kind.iter().enumerate() {
+	m.push_str(&format!("int: max_resources = {};\n", max_resources));
+	m.push_str("array[1..num_tasks] of int: num_resources = [");
+	for (i, n) in num_resources.iter().enumerate() {
 		if i > 0 {
 			m.push_str(", ");
 		}
-		m.push_str(&k.to_string());
+		m.push_str(&n.to_string());
 	}
 	m.push_str("];\n");
+
+	let task_kinds_2d: Vec<String> = task_kinds_flat
+		.iter()
+		.map(|v| {
+			match v {
+				0 => "0".to_string(),
+				k => k.to_string(),
+			}
+		})
+		.collect();
+	m.push_str(&format!(
+		"array[1..num_tasks, 1..max_resources] of int: task_kinds = array2d(1..num_tasks, 1..max_resources, [{}]);\n",
+		task_kinds_2d.join(", "),
+	));
 
 	m.push_str(&format!(
 		"array[1..num_kinds] of int: kind_start = [{}];\n",
@@ -204,22 +221,25 @@ fn build_model(
 	m.push_str("\
 array[1..num_tasks] of var 0..horizon: start;
 array[1..num_tasks] of var 0..num_cooks: cook;
-array[1..num_tasks] of var 0..num_equipment: assign;
+array[1..num_tasks, 1..max_resources] of var 0..num_equipment: assign;
 
 constraint forall(i in 1..num_deps)(
   start[deps_to[i]] >= start[deps_from[i]] + actual_duration[deps_from[i]]
 );
 
-constraint forall(i in 1..num_tasks, j in 1..num_tasks where i < j /\\ assign[i] > 0 /\\ assign[i] = assign[j])(
-  start[i] + actual_duration[i] <= start[j] \\/ start[j] + actual_duration[j] <= start[i]
+constraint forall(i in 1..num_tasks, j in 1..num_tasks where i < j, ri in 1..max_resources, rj in 1..max_resources)(
+  (assign[i, ri] > 0 /\\ assign[i, ri] = assign[j, rj]) ->
+  (start[i] + actual_duration[i] <= start[j] \\/ start[j] + actual_duration[j] <= start[i])
 );
 
-constraint forall(t in 1..num_tasks where task_kind[t] > 0)(
-  assign[t] >= kind_start[task_kind[t]] /\\ assign[t] <= kind_end[task_kind[t]]
+constraint forall(t in 1..num_tasks, r in 1..max_resources where task_kinds[t, r] > 0)(
+  assign[t, r] >= kind_start[task_kinds[t, r]] /\\ assign[t, r] <= kind_end[task_kinds[t, r]]
 );
-constraint forall(t in 1..num_tasks where task_kind[t] == 0)(
-  assign[t] == 0
+constraint forall(t in 1..num_tasks, r in 1..max_resources where task_kinds[t, r] == 0)(
+  assign[t, r] == 0
 );
+
+
 
 constraint forall(i in 1..num_tasks where needs_cook[i])(cook[i] > 0);
 constraint forall(i in 1..num_tasks where not needs_cook[i])(cook[i] = 0);
@@ -244,7 +264,7 @@ var 0..horizon: total_waste = if num_preheats > 0 then sum(p in 1..num_preheats)
 
 solve minimize max_end * (horizon + 1) * (1 + num_preheats) + (max_end - min_recipe_end) * (1 + num_preheats) + total_waste;
 
-output [\"start = \", show(start), \";\\ncook = \", show(cook), \";\\nassign = \", show(assign), \";\\n\"];");
+output [\"start = \", show(start), \";\\ncook = \", show(cook), \";\\nassign = \", show([assign[t, r] | t in 1..num_tasks, r in 1..max_resources]), \";\\n\"];");
 
 	m
 }
@@ -273,7 +293,7 @@ pub fn schedule(
 				id: tid,
 				description: step.description.clone(),
 				duration_minutes: step.duration_minutes,
-				resource_kind: step.resource_kind.clone(),
+				resource_kinds: step.resource_kinds.clone(),
 				dependencies: deps,
 				recipe_idx: ri,
 				needs_cook: step.needs_cook,
@@ -294,7 +314,7 @@ pub fn schedule(
 	let mut preheat_insertions: Vec<(usize, String, u32, String, u16)> = Vec::new();
 	for (i, task) in tasks.iter().enumerate() {
 		if let Some(temp) = task.temperature_celsius
-			&& let Some(ref kind) = task.resource_kind
+			&& let Some(kind) = task.resource_kinds.first()
 		{
 			let min_rate = kitchen
 				.equipment
@@ -317,7 +337,7 @@ pub fn schedule(
 			id: preheat_id.clone(),
 			description: format!("Pre-heat {} to {}°C", kind, temp),
 			duration_minutes: duration,
-			resource_kind: Some(kind),
+			resource_kinds: vec![kind],
 			dependencies: Vec::new(),
 			recipe_idx,
 			needs_cook: false,
@@ -367,13 +387,24 @@ pub fn schedule(
 		}
 	}
 
-	let task_kind: Vec<usize> = tasks
+	let task_kinds: Vec<Vec<usize>> = tasks
 		.iter()
 		.map(|t| {
-			t.resource_kind
-				.as_deref()
-				.and_then(|k| kind_to_int.get(k).copied())
-				.unwrap_or(0)
+			t.resource_kinds
+				.iter()
+				.map(|k| kind_to_int.get(k.as_str()).copied().unwrap_or(0))
+				.collect()
+		})
+		.collect();
+	let max_resources = task_kinds.iter().map(|v| v.len()).max().unwrap_or(0);
+	let num_resources: Vec<usize> = task_kinds.iter().map(|v| v.len()).collect();
+	// Flatten 2D task_kinds to 1D for MiniZinc (row-major), padding with 0s
+	let task_kinds_flat: Vec<usize> = task_kinds
+		.iter()
+		.flat_map(|v| {
+			let mut padded = v.clone();
+			padded.resize(max_resources, 0);
+			padded
 		})
 		.collect();
 
@@ -470,7 +501,9 @@ pub fn schedule(
 		num_equipment,
 		num_kinds,
 		&equip_kind,
-		&task_kind,
+		&task_kinds_flat,
+		max_resources,
+		&num_resources,
 		&kind_start,
 		&kind_end,
 		&eff_duration,
@@ -513,6 +546,7 @@ pub fn schedule(
 		msg.push_str(&format!("\nmodel:\n{}", model));
 		return Err(ScheduleError::SolverFailure(msg));
 	}
+	let assign_len = tasks.len() * max_resources;
 	let mut last_solution: Option<(Vec<u32>, Vec<usize>, Vec<usize>)> = None;
 
 	fn parse_array_i64(s: &str) -> Option<Vec<i64>> {
@@ -579,7 +613,7 @@ pub fn schedule(
 			(start_vals, cook_vals, assign_vals)
 			&& start_vals.len() == tasks.len()
 			&& cook_vals.len() == tasks.len()
-			&& assign_vals.len() == tasks.len()
+			&& assign_vals.len() == assign_len
 		{
 			last_solution = Some((start_vals, cook_vals, assign_vals));
 		}
@@ -597,12 +631,16 @@ pub fn schedule(
 			} else {
 				None
 			};
-			let assign_idx = assign_vals[i];
-			let assigned_resource = if assign_idx > 0 && assign_idx <= equipment.len() {
-				Some(equipment[assign_idx - 1].name.clone())
-			} else {
-				None
-			};
+			let resource_ids: Vec<Option<String>> = (0..task.resource_kinds.len())
+				.map(|r| {
+					let assign_idx = assign_vals[i * max_resources + r];
+					if assign_idx > 0 && assign_idx <= equipment.len() {
+						Some(equipment[assign_idx - 1].name.clone())
+					} else {
+						None
+					}
+				})
+				.collect();
 			let deps_ids: Vec<String> = task
 				.dependencies
 				.iter()
@@ -622,8 +660,8 @@ pub fn schedule(
 				description: task.description.clone(),
 				start_offset_minutes: start_vals[i],
 				duration_minutes: actual_dur,
-				resource_id: assigned_resource,
-				resource_kind: task.resource_kind.clone(),
+				resource_ids,
+				resource_kinds: task.resource_kinds.clone(),
 				cook: cook_name,
 				dependencies: deps_ids,
 			}
@@ -642,7 +680,7 @@ struct TaskData {
 	id: String,
 	description: String,
 	duration_minutes: u32,
-	resource_kind: Option<String>,
+	resource_kinds: Vec<String>,
 	dependencies: Vec<String>,
 	recipe_idx: usize,
 	needs_cook: bool,

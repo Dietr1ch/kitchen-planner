@@ -34,7 +34,7 @@ pub fn validate(kitchen: &Kitchen, cooks: &[Cook], recipes: &[Recipe]) -> Vec<Va
 		for step in &recipe.steps {
 			let task_id = format!("{}:{}", recipe.name, step.id);
 
-			if let Some(ref kind) = step.resource_kind {
+			for kind in &step.resource_kinds {
 				if !equip_kinds.contains(kind.as_str()) {
 					errors.push(ValidationError {
 						error_type: "missing_equipment_kind".into(),

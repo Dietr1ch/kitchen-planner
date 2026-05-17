@@ -177,11 +177,12 @@ tr.dep-downstream .bar { background: #2196f3 !important; }
       var desc = escapeHtml(t.description);
       var cook = t.cook || '(none)';
       var escapedCook = escapeHtml(cook);
-      var resourceKind = t.resource_kind || null;
-      var resourceName = t.resource_id || null;
-      var resource = resourceKind && resourceName
-        ? resourceKind + ' (' + resourceName + ')'
-        : escapeHtml(resourceKind || resourceName || '(none)');
+      var resourceKinds = t.resource_kinds || [];
+      var resourceIds = t.resource_ids || [];
+      var resource = resourceKinds.map(function(k, i) {
+        var name = resourceIds[i] || null;
+        return name ? k + ' (' + name + ')' : k;
+      }).join(', ') || '(none)';
 
       var cookColorVal = cookColor(cook);
       var cookCell = cookColorVal

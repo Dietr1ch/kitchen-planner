@@ -7,11 +7,11 @@
     (name: "Parsley", quantity: 10.0, unit: "g", optional: true, alternatives: []),
   ],
   steps: [
-    (id: "s1", description: "Mince garlic and chop parsley", duration_minutes: 5, resource_kind: Some("prep_surface"), dependencies: [], optional: false,
+    (id: "s1", description: "Mince garlic and chop parsley", duration_minutes: 5, resource_kinds: ["prep_surface"], dependencies: [], optional: false,
       skill: Some("knife_work"), min_skill_level: Some(Novice),
       duration_by_skill: Some({ Unskilled: 7, Novice: 5, Intermediate: 4, Advanced: 4, Expert: 3 })),
-    (id: "s2", description: "Mix butter with garlic and parsley", duration_minutes: 3, resource_kind: Some("prep_surface"), dependencies: ["s1"], optional: false),
-    (id: "s3", description: "Slice baguette and spread garlic butter", duration_minutes: 5, resource_kind: Some("prep_surface"), dependencies: ["s2"], optional: false),
-    (id: "s4", description: "Bake in oven", duration_minutes: 10, resource_kind: Some("oven"), dependencies: ["s3"], optional: false, needs_cook: false, temperature_celsius: Some(200)),
+    (id: "s2", description: "Mix butter with garlic and parsley", duration_minutes: 3, resource_kinds: ["prep_surface"], dependencies: ["s1"], optional: false),
+    (id: "s3", description: "Slice baguette and spread garlic butter", duration_minutes: 5, resource_kinds: ["prep_surface"], dependencies: ["s2"], optional: false),
+    (id: "s4", description: "Bake in oven", duration_minutes: 10, resource_kinds: ["oven"], dependencies: ["s3"], optional: false, needs_cook: false, temperature_celsius: Some(200)),
   ],
 )

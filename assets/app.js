@@ -500,10 +500,14 @@
         var taskId = recipe.name + ": " + step.description;
         var stepFailed = false;
 
-        // Check that required equipment kind exists
-        if (!stepFailed && step.resource_kind && !equipKinds[step.resource_kind]) {
-          errors.push("No " + step.resource_kind + " available for '" + taskId + "'");
-          stepFailed = true;
+        // Check that required equipment kinds exist
+        if (!stepFailed) {
+          (step.resource_kinds || []).forEach(function(kind) {
+            if (!equipKinds[kind]) {
+              errors.push("No " + kind + " available for '" + taskId + "'");
+              stepFailed = true;
+            }
+          });
         }
 
         // Check that cooks are available for steps needing them

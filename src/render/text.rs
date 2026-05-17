@@ -71,8 +71,7 @@ impl Renderer for TextRenderer {
 			let dish = truncate(&task.dish, 12);
 			let desc = truncate(&task.description, 35);
 			let deps = short_deps(&task.dependencies);
-			let resource =
-				resource_display(task.resource_kind.as_deref(), task.resource_id.as_deref());
+			let resource = resource_display(&task.resource_kinds, &task.resource_ids);
 			let cook = task.cook.as_deref().unwrap_or("(none)");
 
 			out.push_str(&format!(
@@ -85,11 +84,17 @@ impl Renderer for TextRenderer {
 	}
 }
 
-fn resource_display(kind: Option<&str>, name: Option<&str>) -> String {
-	match (kind, name) {
-		(Some(k), Some(n)) => format!("{} ({})", k, n),
-		(Some(k), None) => k.to_string(),
-		(None, Some(n)) => n.to_string(),
-		(None, None) => "(none)".to_string(),
+fn resource_display(kinds: &[String], names: &[Option<String>]) -> String {
+	if kinds.is_empty() {
+		return "(none)".to_string();
 	}
+	kinds
+		.iter()
+		.zip(names.iter())
+		.map(|(k, n)| match n {
+			Some(name) => format!("{} ({})", k, name),
+			None => k.clone(),
+		})
+		.collect::<Vec<_>>()
+		.join(", ")
 }

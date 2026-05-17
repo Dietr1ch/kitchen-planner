@@ -17,9 +17,9 @@ pub struct Task {
 	pub start_offset_minutes: u32,
 	pub duration_minutes: u32,
 	#[serde(default)]
-	pub resource_id: Option<String>,
+	pub resource_ids: Vec<Option<String>>,
 	#[serde(default)]
-	pub resource_kind: Option<String>,
+	pub resource_kinds: Vec<String>,
 	#[serde(default)]
 	pub cook: Option<String>,
 	#[serde(default)]
