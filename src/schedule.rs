@@ -9,34 +9,52 @@ use crate::models::kitchen::Kitchen;
 use crate::models::plan::{Plan, Task};
 use crate::models::recipe::Recipe;
 
+/// Errors from the scheduling pipeline.
 #[derive(Debug, thiserror::Error)]
 pub enum ScheduleError {
+	/// Wrapper for `std::io::Error` from solver subprocess I/O.
 	#[error("failed to create or write model file")]
 	IO(#[from] std::io::Error),
+	/// The solver subprocess exited with a non-zero status (not UNSAT).
 	#[error("solver failed: {0}")]
 	SolverFailure(String),
+	/// The problem is provably unsatisfiable given the inputs.
 	#[error("Unfeasible problem: {0}")]
 	Unfeasible(String),
+	/// The solver produced no solution (could be timeout or empty output).
 	#[error("no solution found from solver")]
 	NoSolution,
 }
 
 const MODEL: &str = include_str!("model.mzn");
 
+/// A single task extracted from a recipe step, possibly with pre-heat injection.
 struct TaskData {
+	/// Unique ID like `"Lasagna:s1"` or `"oven:preheat:180"`.
 	id: String,
+	/// Human-readable description.
 	description: String,
+	/// Base duration in minutes (overridden by `duration_by_skill`).
 	duration_minutes: u32,
+	/// Equipment kinds this task needs (e.g. `["oven"]`).
 	resource_kinds: Vec<String>,
+	/// IDs of tasks that must finish before this one starts.
 	dependencies: Vec<String>,
+	/// Index into the original recipes slice (0-based).
 	recipe_idx: usize,
+	/// Whether this task occupies a cook.
 	needs_cook: bool,
+	/// Skill-level → duration overrides (if the task requires a skill).
 	duration_by_skill: Option<HashMap<SkillLevel, u32>>,
+	/// Name of the skill this task requires (if any).
 	skill: Option<String>,
+	/// Minimum skill level the assigned cook must have.
 	min_skill_level: Option<SkillLevel>,
+	/// Target temperature for baking (triggers pre-heat injection).
 	temperature_celsius: Option<u16>,
 }
 
+/// Builder for MiniZinc DZN (data) format text.
 struct DznWriter {
 	content: String,
 }
@@ -46,10 +64,12 @@ impl DznWriter {
 		DznWriter { content: String::new() }
 	}
 
+	/// Append a scalar parameter: `name = value;`
 	fn param(&mut self, name: &str, value: impl std::fmt::Display) {
 		self.content.push_str(&format!("{} = {};\n", name, value));
 	}
 
+	/// Append a 1-D integer array: `name = [v1, v2, ...];`
 	fn int_array(&mut self, name: &str, values: &[i64]) {
 		self.content.push_str(&format!(
 			"{} = [{}];\n",
@@ -62,6 +82,7 @@ impl DznWriter {
 		));
 	}
 
+	/// Append a 1-D boolean array: `name = [true, false, ...];`
 	fn bool_array(&mut self, name: &str, values: &[bool]) {
 		self.content.push_str(&format!(
 			"{} = [{}];\n",
@@ -74,6 +95,7 @@ impl DznWriter {
 		));
 	}
 
+	/// Append a 2-D integer array using `array2d(rlo..rhi, clo..chi, [...])`.
 	fn int_array2d(
 		&mut self,
 		name: &str,
@@ -99,6 +121,11 @@ impl DznWriter {
 	}
 }
 
+/// Build and solve a MiniZinc scheduling problem.
+///
+/// Expands recipes into task lists, injects pre-heat tasks, constructs the
+/// DZN data block, spawns `minizinc --solver gecode`, and parses the
+/// JSON-stream output into a [`Plan`].
 pub fn schedule(
 	kitchen: &Kitchen,
 	cooks: &[Cook],
@@ -194,11 +221,14 @@ pub fn schedule(
 	parse_solution(&solution, &tasks, &id_to_idx, cooks, &equipment, max_resources, &durations, &eff_duration, &needs_cook_arr)
 }
 
+/// Equipment item with its kind string, used for index-mapping.
 struct EquipInfo {
 	name: String,
 	kind: String,
 }
 
+/// Map equipment kind strings to 1-based indices and produce the
+/// `equip_kind` array used by the MiniZinc model.
 fn build_equip_kind_mapping(equipment: &[EquipInfo]) -> (HashMap<String, usize>, Vec<i64>) {
 	let mut kind_to_idx: HashMap<String, usize> = HashMap::new();
 	for eq in equipment {
@@ -217,6 +247,8 @@ fn build_equip_kind_mapping(equipment: &[EquipInfo]) -> (HashMap<String, usize>,
 	(kind_to_idx, equip_kind)
 }
 
+/// Compute `kind_start` and `kind_end` arrays — contiguous index ranges
+/// for each equipment kind.
 fn build_kind_ranges(equip_kind: &[i64], num_kinds: usize) -> (Vec<i64>, Vec<i64>) {
 	let mut kind_start = vec![i64::MAX; num_kinds];
 	let mut kind_end = vec![i64::MIN; num_kinds];
@@ -243,6 +275,7 @@ fn build_kind_ranges(equip_kind: &[i64], num_kinds: usize) -> (Vec<i64>, Vec<i64
 	(kind_start, kind_end)
 }
 
+/// Map each task's `resource_kinds` to kind indices (0 = unknown/unused).
 fn build_task_kinds(tasks: &[TaskData], kind_to_idx: &HashMap<String, usize>) -> Vec<Vec<usize>> {
 	tasks
 		.iter()
@@ -255,6 +288,8 @@ fn build_task_kinds(tasks: &[TaskData], kind_to_idx: &HashMap<String, usize>) ->
 		.collect()
 }
 
+/// Build 1-indexed (from, to) dependency edge arrays, skipping missing
+/// dependency IDs and deduplicating edges.
 fn build_dependencies(
 	tasks: &[TaskData],
 	id_to_idx: &HashMap<String, usize>,
@@ -282,6 +317,8 @@ fn build_dependencies(
 }
 
 #[allow(clippy::type_complexity)]
+/// Build skill index mapping, required-skill / min-level arrays, and the
+/// `cook_skill_level` matrix. Returns `(skill_to_idx, num_skills, required_skill, min_level, cook_skill_level)`.
 fn build_skill_data(
 	tasks: &[TaskData],
 	cooks: &[Cook],
@@ -336,6 +373,8 @@ fn build_skill_data(
 	(skill_to_idx, num_skills, required_skill, min_level, cook_skill_level)
 }
 
+/// Pre-compute the `eff_duration[cook, task]` matrix for all cook-task
+/// pairs using skill-level fallback logic.
 fn compute_effective_durations(
 	tasks: &[TaskData],
 	cooks: &[Cook],
@@ -379,6 +418,7 @@ fn compute_effective_durations(
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+/// Serialise all scheduling parameters into MiniZinc DZN format.
 fn build_dzn(
 	num_tasks: usize,
 	horizon: u32,
@@ -454,6 +494,9 @@ fn build_dzn(
 	w.content
 }
 
+/// Spawn `minizinc --solver gecode --json-stream`, pipe model + data via
+/// stdin, and return the raw JSON-stream output. Detects UNSAT and solver
+/// failures.
 fn run_solver(model_input: &str) -> Result<String, ScheduleError> {
 	let mut child = Command::new("minizinc")
 		.arg("--solver")
@@ -513,6 +556,8 @@ fn run_solver(model_input: &str) -> Result<String, ScheduleError> {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Parse the JSON-stream solver output into a [`Plan`]. Extracts `start`,
+/// `cook`, and `assign` arrays, then maps indices back to names.
 fn parse_solution(
 	stdout: &str,
 	tasks: &[TaskData],
@@ -630,6 +675,7 @@ fn parse_solution(
 	Ok(Plan { tasks: plan_tasks })
 }
 
+/// Parse a `[1, 2, 3]` string into `Vec<i64>`. Returns `None` on parse failure.
 fn parse_i64_array(s: &str) -> Option<Vec<i64>> {
 	let s = s.trim();
 	if !s.starts_with('[') || !s.ends_with(']') {
@@ -642,6 +688,9 @@ fn parse_i64_array(s: &str) -> Option<Vec<i64>> {
 	inner.split(',').map(|n| n.trim().parse::<i64>().ok()).collect()
 }
 
+/// Flatten recipes into a flat task list, prefixing step IDs with the
+/// recipe name, then inject pre-heat tasks for any step with a
+/// `temperature_celsius` value.
 fn expand_tasks(recipes: &[Recipe], kitchen: &Kitchen) -> (Vec<TaskData>, Vec<PreHeatPair>) {
 	let mut tasks = Vec::new();
 
@@ -674,11 +723,18 @@ fn expand_tasks(recipes: &[Recipe], kitchen: &Kitchen) -> (Vec<TaskData>, Vec<Pr
 	(tasks, preheat_pairs)
 }
 
+/// Links a synthetic pre-heat task to its corresponding bake task.
 struct PreHeatPair {
+	/// Index of the pre-heat task in the task list.
 	preheat_idx: usize,
+	/// Index of the bake task in the task list.
 	bake_idx: usize,
 }
 
+/// Scan tasks for `temperature_celsius`, insert synthetic pre-heat tasks,
+/// chain multiple pre-heats for the same equipment kind, and add
+/// dependencies from pre-heat to bake. Returns the list of
+/// (preheat, bake) index pairs.
 fn inject_preheat_tasks(tasks: &mut Vec<TaskData>, kitchen: &Kitchen) -> Vec<PreHeatPair> {
 	let mut kind_temps: HashMap<String, Vec<u16>> = HashMap::new();
 	let mut temp_to_bakes: HashMap<(String, u16), Vec<usize>> = HashMap::new();
