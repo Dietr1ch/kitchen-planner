@@ -820,6 +820,62 @@ fn inject_preheat_tasks(tasks: &mut Vec<TaskData>, kitchen: &Kitchen) -> Vec<Pre
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use googletest::prelude::*;
+
+	mod test_data {
+		use super::*;
+
+		use std::path::Path;
+
+		use crate::io::read_ron_file;
+
+		fn load_kitchen(path: &Path) -> Kitchen {
+			read_ron_file(path).unwrap()
+		}
+		fn load_cook(path: &Path) -> Cook {
+			read_ron_file(path).unwrap()
+		}
+		fn load_recipe(path: &Path) -> Recipe {
+			read_ron_file(path).unwrap()
+		}
+
+		#[gtest]
+		fn preheating_interleaves_baking() {
+			let kitchen = load_kitchen(Path::new("data/kitchens/simple.ron"));
+			let cooks = vec![
+				// Diana is proficient enough
+				load_cook(Path::new("data/cooks/diana.ron")),
+			];
+			let recipes = vec![
+				load_recipe(Path::new("data/recipes/garlic-bread.ron")),
+				load_recipe(Path::new("data/recipes/lasagna.ron")),
+			];
+
+			let plan = schedule(&kitchen, &cooks, &recipes);
+			let mut plan = plan.unwrap();
+			let oven = "oven".to_string();
+
+			plan.tasks.sort_by_key(|t| t.start_offset_minutes);
+			println!("Plan:\n{:?}", plan.tasks);
+
+			let oven_tasks_descriptions: Vec<String> = plan
+				.tasks
+				.iter()
+				.filter(|t| t.resource_kinds.contains(&oven))
+				.map(|t| t.description.clone())
+				.collect();
+
+			expect_that!(
+				oven_tasks_descriptions,
+				elements_are![
+					starts_with("Pre-heat oven to"),
+					starts_with("Bake"),
+					starts_with("Pre-heat oven to"),
+					starts_with("Bake"),
+				]
+			);
+		}
+	}
 
 	fn dummy_task(id: &str, deps: Vec<&str>) -> TaskData {
 		TaskData {
